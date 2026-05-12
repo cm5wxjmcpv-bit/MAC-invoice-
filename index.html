@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MAC Industries Invoice App</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">Contractor invoice tools</p>
+      <h1>MAC Industries</h1>
+    </div>
+    <span id="storageStatus" class="status-pill">Loading...</span>
+  </header>
+
+  <main>
+    <section id="homeTab" class="tab-panel active">
+      <div class="hero-card">
+        <h2>MAC Industries Invoice App</h2>
+        <p>Create customers, reusable services, invoices, PDFs, and email-ready records from a static GitHub Pages site.</p>
+        <button id="homeCreateInvoiceBtn" class="primary-btn large-btn">Create New Invoice</button>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-card"><span>Unpaid</span><strong id="unpaidTotal">$0.00</strong></div>
+        <div class="summary-card"><span>Paid</span><strong id="paidTotal">$0.00</strong></div>
+      </div>
+      <div class="card">
+        <h3>Recent invoices</h3>
+        <div id="recentInvoicesList" class="list-stack empty-state">No invoices yet.</div>
+      </div>
+    </section>
+
+    <section id="customersTab" class="tab-panel">
+      <div class="card">
+        <h2>Customers</h2>
+        <input type="hidden" id="customerId">
+        <label>Customer name <input id="customerName" type="text" placeholder="John Smith"></label>
+        <label>Phone <input id="customerPhone" type="tel" placeholder="555-123-4567"></label>
+        <label>Email <input id="customerEmail" type="email" placeholder="john@example.com"></label>
+        <label>Service address <textarea id="customerAddress" rows="2" placeholder="123 Main St"></textarea></label>
+        <label>Notes <textarea id="customerNotes" rows="2" placeholder="Gate code, preferences, reminders"></textarea></label>
+        <div class="button-row">
+          <button id="saveCustomerBtn" class="primary-btn">Save Customer</button>
+          <button id="clearCustomerBtn" class="secondary-btn">Clear</button>
+        </div>
+      </div>
+      <div class="card">
+        <input id="customerSearch" type="search" placeholder="Search customers">
+        <div id="customersList" class="list-stack"></div>
+      </div>
+    </section>
+
+    <section id="servicesTab" class="tab-panel">
+      <div class="card">
+        <h2>Service Templates</h2>
+        <input type="hidden" id="serviceId">
+        <label>Service name <input id="serviceName" type="text" placeholder="Pressure Washing"></label>
+        <label>Default price <input id="servicePrice" type="number" min="0" step="0.01" placeholder="250"></label>
+        <label>Description/notes <textarea id="serviceDescription" rows="2" placeholder="What is included?"></textarea></label>
+        <div class="button-row">
+          <button id="saveServiceBtn" class="primary-btn">Save Service</button>
+          <button id="clearServiceBtn" class="secondary-btn">Clear</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Saved services</h3>
+        <div id="servicesList" class="list-stack"></div>
+      </div>
+    </section>
+
+    <section id="invoicesTab" class="tab-panel">
+      <div class="card invoice-builder">
+        <div class="section-heading">
+          <h2>Invoice Builder</h2>
+          <button id="newInvoiceBtn" class="secondary-btn">New</button>
+        </div>
+        <div class="two-col">
+          <label>Invoice number <input id="invoiceNumber" type="text"></label>
+          <label>Date <input id="invoiceDate" type="date"></label>
+        </div>
+        <label>Select customer
+          <select id="invoiceCustomerSelect"><option value="">Choose customer...</option></select>
+        </label>
+        <div id="selectedCustomerCard" class="mini-card">No customer selected.</div>
+        <div class="section-heading">
+          <h3>Line items</h3>
+          <button id="toggleServicePickerBtn" class="primary-btn">Add Services</button>
+        </div>
+        <div id="servicePicker" class="service-picker hidden"></div>
+        <div id="lineItemsList" class="line-items empty-state">No line items yet. Tap Add Services.</div>
+        <div class="total-row"><span>Invoice total</span><strong id="invoiceTotal">$0.00</strong></div>
+        <label>Notes <textarea id="invoiceNotes" rows="3" placeholder="Customer requested rear patio only."></textarea></label>
+        <label>Status
+          <select id="invoiceStatus">
+            <option value="unpaid">Unpaid</option>
+            <option value="paid">Paid</option>
+          </select>
+        </label>
+        <div class="button-row">
+          <button id="saveInvoiceBtn" class="primary-btn">Save Invoice</button>
+          <button id="invoiceGeneratePdfBtn" class="secondary-btn">Generate PDF</button>
+          <button id="invoiceSendEmailBtn" class="secondary-btn">Send Email</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Saved invoices</h3>
+        <div id="invoicesList" class="list-stack"></div>
+      </div>
+    </section>
+
+    <section id="sendTab" class="tab-panel">
+      <div class="card">
+        <h2>Send Invoice</h2>
+        <div id="sendInvoiceSummary" class="mini-card">No current invoice selected.</div>
+        <div class="button-grid">
+          <button id="sendGeneratePdfBtn" class="primary-btn">Generate PDF</button>
+          <button id="downloadPdfBtn" class="primary-btn">Download PDF</button>
+          <button id="sendEmailBtn" class="primary-btn">Send Email</button>
+          <button id="markPaidBtn" class="secondary-btn">Mark Paid</button>
+          <button id="markUnpaidBtn" class="secondary-btn">Mark Unpaid</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="messageBox" class="message-box" aria-live="polite"></div>
+
+  <nav class="bottom-nav" aria-label="Main navigation">
+    <button class="nav-btn active" data-tab="homeTab">Home</button>
+    <button class="nav-btn" data-tab="customersTab">Customers</button>
+    <button class="nav-btn" data-tab="servicesTab">Services</button>
+    <button class="nav-btn" data-tab="invoicesTab">Invoices</button>
+    <button class="nav-btn" data-tab="sendTab">Send</button>
+  </nav>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="config.js"></script>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
