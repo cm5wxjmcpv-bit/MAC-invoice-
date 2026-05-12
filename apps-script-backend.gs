@@ -11,7 +11,7 @@ const HEADERS = {
   Customers: ['id', 'name', 'phone', 'email', 'address', 'notes', 'createdAt', 'updatedAt'],
   Services: ['id', 'serviceName', 'defaultPrice', 'description', 'createdAt', 'updatedAt'],
   Invoices: ['id', 'invoiceNumber', 'date', 'customerId', 'customerName', 'customerPhone', 'customerEmail', 'customerAddress', 'subtotal', 'total', 'notes', 'status', 'createdAt', 'updatedAt', 'emailSentAt'],
-  InvoiceItems: ['id', 'invoiceId', 'serviceId', 'serviceName', 'quantity', 'unitPrice', 'lineTotal'],
+  InvoiceItems: ['id', 'invoiceId', 'serviceId', 'serviceName', 'quantity', 'unitPrice', 'lineTotal', 'lineNote'],
   EmailLog: ['id', 'invoiceId', 'invoiceNumber', 'customerEmail', 'filename', 'status', 'message', 'createdAt'],
   Settings: ['key', 'value']
 };
@@ -70,9 +70,22 @@ function ensureSetup() {
 }
 
 function ensureHeaders(sheet, headers) {
-  const firstRow = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  const missing = headers.some(function(header, index) { return firstRow[index] !== header; });
-  if (missing) sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  const lastColumn = Math.max(sheet.getLastColumn(), 1);
+  const firstRow = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
+  const currentHeaders = firstRow.filter(function(header) { return header !== ''; });
+  if (!currentHeaders.length) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return;
+  }
+  const missingHeaders = headers.filter(function(header) { return currentHeaders.indexOf(header) === -1; });
+  if (missingHeaders.length) {
+    sheet.getRange(1, currentHeaders.length + 1, 1, missingHeaders.length).setValues([missingHeaders]);
+  }
+}
+
+function getSheetHeaders(sheet) {
+  const lastColumn = Math.max(sheet.getLastColumn(), 1);
+  return sheet.getRange(1, 1, 1, lastColumn).getValues()[0].filter(function(header) { return header !== ''; });
 }
 
 function seedServices() {
@@ -97,7 +110,7 @@ function getRows(sheetName) {
 
 function saveRow(sheetName, object, prefix) {
   const sheet = ss().getSheetByName(sheetName);
-  const headers = HEADERS[sheetName];
+  const headers = getSheetHeaders(sheet);
   const now = new Date().toISOString();
   const saved = Object.assign({}, object);
   saved.id = saved.id || makeId(prefix);
@@ -130,8 +143,20 @@ function getInvoices() {
   const invoices = getRows(SHEET_NAMES.INVOICES);
   const items = getRows(SHEET_NAMES.INVOICE_ITEMS);
   return invoices.map(function(invoice) {
-    invoice.items = items.filter(function(item) { return String(item.invoiceId) === String(invoice.id); });
+    invoice.items = items.filter(function(item) { return String(item.invoiceId) === String(invoice.id); }).map(normalizeInvoiceItem);
     return invoice;
+  });
+}
+
+function normalizeInvoiceItem(item) {
+  const quantity = item.quantity === undefined || item.quantity === '' ? 1 : Number(item.quantity) || 0;
+  const unitPrice = item.unitPrice === undefined || item.unitPrice === '' ? 0 : Number(item.unitPrice) || 0;
+  const lineTotal = item.lineTotal === undefined || item.lineTotal === '' ? quantity * unitPrice : Number(item.lineTotal) || 0;
+  return Object.assign({}, item, {
+    quantity: quantity,
+    unitPrice: unitPrice,
+    lineTotal: lineTotal,
+    lineNote: item.lineNote || ''
   });
 }
 
@@ -143,25 +168,31 @@ function saveInvoice(invoice) {
   invoice.total = Number(invoice.total || invoice.subtotal || 0);
   const saved = saveRow(SHEET_NAMES.INVOICES, invoice, 'invoice');
   deleteInvoiceItems(saved.id);
-  invoice.items.forEach(function(item) {
-    const savedItem = Object.assign({}, item, { invoiceId: saved.id, id: item.id || makeId('item') });
+  const savedItems = invoice.items.map(function(item) {
+    const normalizedItem = normalizeInvoiceItem(item);
+    const savedItem = Object.assign({}, normalizedItem, { invoiceId: saved.id, id: normalizedItem.id || makeId('item') });
     saveInvoiceItem(savedItem);
+    return savedItem;
   });
-  saved.items = invoice.items.map(function(item) { return Object.assign({}, item, { invoiceId: saved.id }); });
+  saved.items = savedItems;
   return saved;
 }
 
 function saveInvoiceItem(item) {
   const sheet = ss().getSheetByName(SHEET_NAMES.INVOICE_ITEMS);
-  const headers = HEADERS.InvoiceItems;
-  const row = headers.map(function(header) { return item[header] !== undefined ? item[header] : ''; });
+  const headers = getSheetHeaders(sheet);
+  const normalized = normalizeInvoiceItem(item);
+  const row = headers.map(function(header) { return normalized[header] !== undefined ? normalized[header] : ''; });
   sheet.appendRow(row);
 }
 
 function deleteInvoiceItems(invoiceId) {
   const sheet = ss().getSheetByName(SHEET_NAMES.INVOICE_ITEMS);
+  const headers = getSheetHeaders(sheet);
+  const invoiceIdColumn = headers.indexOf('invoiceId') + 1;
+  if (!invoiceIdColumn) return;
   for (let row = sheet.getLastRow(); row >= 2; row--) {
-    if (String(sheet.getRange(row, 2).getValue()) === String(invoiceId)) sheet.deleteRow(row);
+    if (String(sheet.getRange(row, invoiceIdColumn).getValue()) === String(invoiceId)) sheet.deleteRow(row);
   }
 }
 

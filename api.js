@@ -74,6 +74,30 @@ function fail(error) {
   return { ok: false, error: error.message || String(error) };
 }
 
+function normalizeInvoiceItem(item = {}) {
+  const quantity = item.quantity === undefined || item.quantity === "" ? 1 : Number(item.quantity) || 0;
+  const unitPrice = item.unitPrice === undefined || item.unitPrice === "" ? 0 : Number(item.unitPrice) || 0;
+  const lineTotal = item.lineTotal === undefined || item.lineTotal === "" ? quantity * unitPrice : Number(item.lineTotal) || 0;
+  return {
+    ...item,
+    quantity,
+    unitPrice,
+    lineTotal,
+    lineNote: item.lineNote || ""
+  };
+}
+
+function normalizeInvoice(invoice = {}) {
+  const items = Array.isArray(invoice.items) ? invoice.items.map(normalizeInvoiceItem) : [];
+  const subtotal = Number(invoice.subtotal || items.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0));
+  return {
+    ...invoice,
+    items,
+    subtotal,
+    total: Number(invoice.total || subtotal || 0)
+  };
+}
+
 async function apiGetCustomers() {
   try {
     if (apiUsesBackend()) return await callBackend("getCustomers");
@@ -133,17 +157,24 @@ async function apiDeleteService(id) {
 
 async function apiGetInvoices() {
   try {
-    if (apiUsesBackend()) return await callBackend("getInvoices");
-    return ok(readStore(STORAGE_KEYS.invoices));
+    if (apiUsesBackend()) {
+      const result = await callBackend("getInvoices");
+      return ok((result.data || []).map(normalizeInvoice), result.message);
+    }
+    return ok(readStore(STORAGE_KEYS.invoices).map(normalizeInvoice));
   } catch (error) { return fail(error); }
 }
 
 async function apiSaveInvoice(invoice) {
   try {
-    if (apiUsesBackend()) return await callBackend("saveInvoice", { invoice });
-    const invoices = readStore(STORAGE_KEYS.invoices);
+    const normalized = normalizeInvoice(invoice);
+    if (apiUsesBackend()) {
+      const result = await callBackend("saveInvoice", { invoice: normalized });
+      return ok(normalizeInvoice(result.data), result.message);
+    }
+    const invoices = readStore(STORAGE_KEYS.invoices).map(normalizeInvoice);
     const now = apiNow();
-    const saved = { ...invoice, id: invoice.id || apiId("invoice"), createdAt: invoice.createdAt || now, updatedAt: now };
+    const saved = { ...normalized, id: normalized.id || apiId("invoice"), createdAt: normalized.createdAt || now, updatedAt: now };
     const index = invoices.findIndex((item) => item.id === saved.id);
     if (index >= 0) invoices[index] = saved; else invoices.push(saved);
     writeStore(STORAGE_KEYS.invoices, invoices);
@@ -154,13 +185,13 @@ async function apiSaveInvoice(invoice) {
 async function apiUpdateInvoiceStatus(invoiceId, status) {
   try {
     if (apiUsesBackend()) return await callBackend("updateInvoiceStatus", { invoiceId, status });
-    const invoices = readStore(STORAGE_KEYS.invoices);
+    const invoices = readStore(STORAGE_KEYS.invoices).map(normalizeInvoice);
     const invoice = invoices.find((item) => item.id === invoiceId);
     if (!invoice) throw new Error("Invoice not found");
     invoice.status = status;
     invoice.updatedAt = apiNow();
     writeStore(STORAGE_KEYS.invoices, invoices);
-    return ok(invoice, "Status updated");
+    return ok(normalizeInvoice(invoice), "Status updated");
   } catch (error) { return fail(error); }
 }
 
