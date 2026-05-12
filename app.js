@@ -275,9 +275,11 @@ function addServiceToInvoice(serviceId) {
     serviceName: service.serviceName,
     quantity: 1,
     unitPrice: Number(service.defaultPrice) || 0,
-    lineTotal: Number(service.defaultPrice) || 0
+    lineTotal: Number(service.defaultPrice) || 0,
+    lineNote: ""
   };
   state.currentInvoice.items.push(item);
+  state.generatedPdf = null;
   calculateInvoiceTotals();
   renderLineItems();
   showMessage(`${service.serviceName} added`);
@@ -286,14 +288,21 @@ function addServiceToInvoice(serviceId) {
 function updateLineItem(id, field, value) {
   const item = state.currentInvoice.items.find((line) => line.id === id);
   if (!item) return;
-  item[field] = field === "serviceName" ? value : Number(value) || 0;
+  if (field === "lineNote" || field === "serviceName") {
+    item[field] = value;
+    state.generatedPdf = null;
+    return;
+  }
+  item[field] = Number(value) || 0;
   item.lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
   calculateInvoiceTotals();
+  state.generatedPdf = null;
   renderLineItems();
 }
 
 function removeLineItem(id) {
   state.currentInvoice.items = state.currentInvoice.items.filter((line) => line.id !== id);
+  state.generatedPdf = null;
   calculateInvoiceTotals();
   renderLineItems();
 }
@@ -313,6 +322,9 @@ function renderLineItems() {
           <label>Qty <input type="number" min="0" step="1" value="${item.quantity}" onchange="updateLineItem('${item.id}', 'quantity', this.value)"></label>
           <label>Price <input type="number" min="0" step="0.01" value="${item.unitPrice}" onchange="updateLineItem('${item.id}', 'unitPrice', this.value)"></label>
         </div>
+        <label class="line-note-label">Line Note
+          <textarea rows="2" placeholder="Optional note for this service, such as truck numbers or details" oninput="updateLineItem('${item.id}', 'lineNote', this.value)">${escapeHtml(item.lineNote || "")}</textarea>
+        </label>
         <div class="line-total">Line total: ${money(item.lineTotal)}</div>
         <button class="danger-btn" onclick="removeLineItem('${item.id}')">Remove Line Item</button>
       </div>`).join("");
@@ -322,6 +334,7 @@ function renderLineItems() {
 
 function calculateInvoiceTotals() {
   if (!state.currentInvoice) return;
+  state.currentInvoice.items = state.currentInvoice.items.map((item) => typeof normalizeInvoiceItem === "function" ? normalizeInvoiceItem(item) : { ...item, lineNote: item.lineNote || "" });
   state.currentInvoice.items.forEach((item) => item.lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0));
   state.currentInvoice.subtotal = state.currentInvoice.items.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0);
   state.currentInvoice.total = state.currentInvoice.subtotal;
@@ -354,7 +367,7 @@ function renderInvoices() {
 function loadInvoice(id) {
   const invoice = state.invoices.find((item) => item.id === id);
   if (!invoice) return;
-  state.currentInvoice = JSON.parse(JSON.stringify(invoice));
+  state.currentInvoice = typeof normalizeInvoice === "function" ? normalizeInvoice(JSON.parse(JSON.stringify(invoice))) : JSON.parse(JSON.stringify(invoice));
   state.generatedPdf = null;
   renderInvoiceBuilder();
   switchTab("invoicesTab");
@@ -384,19 +397,37 @@ function makePdf() {
   y += 12; doc.setFontSize(14); doc.text("Services", 14, y);
   y += 7; doc.setFontSize(10); doc.text("Service", 14, y); doc.text("Qty", 112, y); doc.text("Unit", 135, y); doc.text("Total", 165, y);
   y += 2; doc.line(14, y, 196, y);
+  const ensurePdfSpace = (needed = 8) => {
+    if (y + needed > 280) {
+      doc.addPage();
+      y = 18;
+    }
+  };
   invoice.items.forEach((item) => {
+    const lineNote = String(item.lineNote || "").trim();
+    const noteLines = lineNote ? doc.splitTextToSize(`Note: ${lineNote}`, 92) : [];
+    ensurePdfSpace(10 + (noteLines.length * 5));
     y += 8;
-    if (y > 265) { doc.addPage(); y = 18; }
-    doc.text(String(item.serviceName).slice(0, 45), 14, y);
+    doc.text(String(item.serviceName || "").slice(0, 45), 14, y);
     doc.text(String(item.quantity), 114, y);
     doc.text(money(item.unitPrice), 135, y);
     doc.text(money(item.lineTotal), 165, y);
+    if (noteLines.length) {
+      y += 5;
+      doc.setTextColor(90);
+      doc.text(noteLines, 14, y);
+      doc.setTextColor(0);
+      y += (noteLines.length - 1) * 5;
+    }
   });
+  ensurePdfSpace(18);
   y += 10; doc.line(120, y, 196, y);
   y += 8; doc.setFontSize(14); doc.text(`Invoice Total: ${money(invoice.total)}`, 120, y);
   if (invoice.notes) {
+    const invoiceNoteLines = doc.splitTextToSize(invoice.notes, 180);
+    ensurePdfSpace(20 + (invoiceNoteLines.length * 5));
     y += 14; doc.setFontSize(12); doc.text("Notes", 14, y);
-    y += 6; doc.setFontSize(10); doc.text(doc.splitTextToSize(invoice.notes, 180), 14, y);
+    y += 6; doc.setFontSize(10); doc.text(invoiceNoteLines, 14, y);
   }
   state.generatedPdf = doc;
   showMessage("PDF generated");
