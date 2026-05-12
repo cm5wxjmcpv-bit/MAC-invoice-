@@ -15,6 +15,7 @@ A simple GitHub Pages invoice prototype for MAC Industries. It uses plain HTML, 
   - General Labor — $100
 - Creates invoices quickly from saved customers and services.
 - Lets the user tap preset services to add line items.
+- Adds optional notes to individual invoice line items without changing saved service templates.
 - Recalculates line totals and invoice totals when quantity or price changes.
 - Generates and downloads PDF invoices in the browser with jsPDF.
 - Sends invoice PDFs by email through a Google Apps Script backend when configured.
@@ -147,6 +148,7 @@ Stores invoice line items:
 - `quantity`
 - `unitPrice`
 - `lineTotal`
+- `lineNote`
 
 ### EmailLog
 Stores send attempts:
@@ -215,6 +217,7 @@ Manually verify these items before considering the prototype ready:
 - [ ] Customer can be selected.
 - [ ] Add Services works.
 - [ ] Multiple services can be added.
+- [ ] Line item notes can be entered, saved, reopened, and shown on PDFs without changing totals.
 - [ ] Quantity changes total.
 - [ ] Price changes total.
 - [ ] Line item can be removed.
