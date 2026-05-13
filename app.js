@@ -17,9 +17,36 @@ function showMessage(message, isError = false) {
   setTimeout(() => box.className = "message-box", 3600);
 }
 
-function setStorageStatus() {
-  $("storageStatus").textContent = apiUsesBackend() ? "Google Sheets backend" : "Local storage mode";
-  if (!apiUsesBackend()) showMessage("Backend not configured, using local storage");
+function setStorageStatus(message) {
+  const status = $("storageStatus");
+  if (!apiUsesBackend()) {
+    status.textContent = "Backend: Not configured, using local storage";
+    if (!message) showMessage("Backend not configured, using local storage");
+    return;
+  }
+  status.textContent = message || "Backend: Checking...";
+}
+
+function updateBackendStatus(result) {
+  if (result.ok && result.mode === "backend") {
+    $("storageStatus").textContent = "Backend: Connected";
+    return;
+  }
+  if (!apiUsesBackend()) {
+    $("storageStatus").textContent = "Backend: Not configured, using local storage";
+    return;
+  }
+  $("storageStatus").textContent = "Backend: Error, using local storage";
+}
+
+async function testBackendConnection(showToast = true) {
+  setStorageStatus();
+  const result = await apiTestBackend();
+  updateBackendStatus(result);
+  if (showToast) {
+    showMessage(result.ok ? result.message : `Backend test failed: ${result.error}`, !result.ok);
+  }
+  return result;
 }
 
 function switchTab(tabId) {
@@ -30,9 +57,12 @@ function switchTab(tabId) {
 
 async function loadAll() {
   const [customers, services, invoices] = await Promise.all([apiGetCustomers(), apiGetServices(), apiGetInvoices()]);
-  if (!customers.ok) showMessage(customers.error, true);
-  if (!services.ok) showMessage(services.error, true);
-  if (!invoices.ok) showMessage(invoices.error, true);
+  [customers, services, invoices].forEach((result) => {
+    if (result.warning) showMessage(result.message, true);
+    if (!result.ok) showMessage(result.error, true);
+  });
+  const usedLocalFallback = [customers, services, invoices].some((result) => result.warning || result.mode === "localStorage");
+  if (apiUsesBackend()) $("storageStatus").textContent = usedLocalFallback ? "Backend: Error, using local storage" : "Backend: Connected";
   state.customers = customers.ok ? customers.data : [];
   state.services = services.ok ? services.data : [];
   state.invoices = invoices.ok ? invoices.data : [];
@@ -104,7 +134,7 @@ async function saveCustomer() {
   const customer = customerFromForm();
   if (!customer.name) return showMessage("Customer name required", true);
   const result = await apiSaveCustomer(customer);
-  showMessage(result.ok ? "Saved" : result.error, !result.ok);
+  showMessage(result.ok ? result.message : result.error, !result.ok);
   if (result.ok) clearCustomerForm();
   await loadAll();
 }
@@ -128,7 +158,7 @@ function editCustomer(id) {
 async function deleteCustomer(id) {
   if (!confirm("Delete this customer?")) return;
   const result = await apiDeleteCustomer(id);
-  showMessage(result.ok ? "Deleted" : result.error, !result.ok);
+  showMessage(result.ok ? result.message : result.error, !result.ok);
   await loadAll();
 }
 
@@ -170,7 +200,7 @@ async function saveService() {
   if (!service.serviceName) return showMessage("Service name required", true);
   if (Number.isNaN(service.defaultPrice)) return showMessage("Service price must be a number", true);
   const result = await apiSaveService(service);
-  showMessage(result.ok ? "Saved" : result.error, !result.ok);
+  showMessage(result.ok ? result.message : result.error, !result.ok);
   if (result.ok) clearServiceForm();
   await loadAll();
 }
@@ -192,7 +222,7 @@ function editService(id) {
 async function deleteService(id) {
   if (!confirm("Delete this service template?")) return;
   const result = await apiDeleteService(id);
-  showMessage(result.ok ? "Deleted" : result.error, !result.ok);
+  showMessage(result.ok ? result.message : result.error, !result.ok);
   await loadAll();
 }
 
@@ -275,9 +305,11 @@ function addServiceToInvoice(serviceId) {
     serviceName: service.serviceName,
     quantity: 1,
     unitPrice: Number(service.defaultPrice) || 0,
-    lineTotal: Number(service.defaultPrice) || 0
+    lineTotal: Number(service.defaultPrice) || 0,
+    lineNote: ""
   };
   state.currentInvoice.items.push(item);
+  state.generatedPdf = null;
   calculateInvoiceTotals();
   renderLineItems();
   showMessage(`${service.serviceName} added`);
@@ -286,14 +318,21 @@ function addServiceToInvoice(serviceId) {
 function updateLineItem(id, field, value) {
   const item = state.currentInvoice.items.find((line) => line.id === id);
   if (!item) return;
-  item[field] = field === "serviceName" ? value : Number(value) || 0;
+  if (field === "lineNote" || field === "serviceName") {
+    item[field] = value;
+    state.generatedPdf = null;
+    return;
+  }
+  item[field] = Number(value) || 0;
   item.lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
   calculateInvoiceTotals();
+  state.generatedPdf = null;
   renderLineItems();
 }
 
 function removeLineItem(id) {
   state.currentInvoice.items = state.currentInvoice.items.filter((line) => line.id !== id);
+  state.generatedPdf = null;
   calculateInvoiceTotals();
   renderLineItems();
 }
@@ -313,6 +352,9 @@ function renderLineItems() {
           <label>Qty <input type="number" min="0" step="1" value="${item.quantity}" onchange="updateLineItem('${item.id}', 'quantity', this.value)"></label>
           <label>Price <input type="number" min="0" step="0.01" value="${item.unitPrice}" onchange="updateLineItem('${item.id}', 'unitPrice', this.value)"></label>
         </div>
+        <label class="line-note-label">Line Note
+          <textarea rows="2" placeholder="Optional note for this service, such as truck numbers or details" oninput="updateLineItem('${item.id}', 'lineNote', this.value)">${escapeHtml(item.lineNote || "")}</textarea>
+        </label>
         <div class="line-total">Line total: ${money(item.lineTotal)}</div>
         <button class="danger-btn" onclick="removeLineItem('${item.id}')">Remove Line Item</button>
       </div>`).join("");
@@ -322,6 +364,7 @@ function renderLineItems() {
 
 function calculateInvoiceTotals() {
   if (!state.currentInvoice) return;
+  state.currentInvoice.items = state.currentInvoice.items.map((item) => typeof normalizeInvoiceItem === "function" ? normalizeInvoiceItem(item) : { ...item, lineNote: item.lineNote || "" });
   state.currentInvoice.items.forEach((item) => item.lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0));
   state.currentInvoice.subtotal = state.currentInvoice.items.reduce((sum, item) => sum + Number(item.lineTotal || 0), 0);
   state.currentInvoice.total = state.currentInvoice.subtotal;
@@ -334,7 +377,7 @@ async function saveInvoice() {
   if (!invoice.items.length) return showMessage("Invoice must have at least one line item before saving", true);
   if (!invoice.invoiceNumber) invoice.invoiceNumber = nextInvoiceNumber();
   const result = await apiSaveInvoice(invoice);
-  showMessage(result.ok ? "Invoice saved" : result.error, !result.ok);
+  showMessage(result.ok ? result.message : result.error, !result.ok);
   if (result.ok) state.currentInvoice = result.data;
   await loadAll();
 }
@@ -354,7 +397,7 @@ function renderInvoices() {
 function loadInvoice(id) {
   const invoice = state.invoices.find((item) => item.id === id);
   if (!invoice) return;
-  state.currentInvoice = JSON.parse(JSON.stringify(invoice));
+  state.currentInvoice = typeof normalizeInvoice === "function" ? normalizeInvoice(JSON.parse(JSON.stringify(invoice))) : JSON.parse(JSON.stringify(invoice));
   state.generatedPdf = null;
   renderInvoiceBuilder();
   switchTab("invoicesTab");
@@ -384,19 +427,37 @@ function makePdf() {
   y += 12; doc.setFontSize(14); doc.text("Services", 14, y);
   y += 7; doc.setFontSize(10); doc.text("Service", 14, y); doc.text("Qty", 112, y); doc.text("Unit", 135, y); doc.text("Total", 165, y);
   y += 2; doc.line(14, y, 196, y);
+  const ensurePdfSpace = (needed = 8) => {
+    if (y + needed > 280) {
+      doc.addPage();
+      y = 18;
+    }
+  };
   invoice.items.forEach((item) => {
+    const lineNote = String(item.lineNote || "").trim();
+    const noteLines = lineNote ? doc.splitTextToSize(`Note: ${lineNote}`, 92) : [];
+    ensurePdfSpace(10 + (noteLines.length * 5));
     y += 8;
-    if (y > 265) { doc.addPage(); y = 18; }
-    doc.text(String(item.serviceName).slice(0, 45), 14, y);
+    doc.text(String(item.serviceName || "").slice(0, 45), 14, y);
     doc.text(String(item.quantity), 114, y);
     doc.text(money(item.unitPrice), 135, y);
     doc.text(money(item.lineTotal), 165, y);
+    if (noteLines.length) {
+      y += 5;
+      doc.setTextColor(90);
+      doc.text(noteLines, 14, y);
+      doc.setTextColor(0);
+      y += (noteLines.length - 1) * 5;
+    }
   });
+  ensurePdfSpace(18);
   y += 10; doc.line(120, y, 196, y);
   y += 8; doc.setFontSize(14); doc.text(`Invoice Total: ${money(invoice.total)}`, 120, y);
   if (invoice.notes) {
+    const invoiceNoteLines = doc.splitTextToSize(invoice.notes, 180);
+    ensurePdfSpace(20 + (invoiceNoteLines.length * 5));
     y += 14; doc.setFontSize(12); doc.text("Notes", 14, y);
-    y += 6; doc.setFontSize(10); doc.text(doc.splitTextToSize(invoice.notes, 180), 14, y);
+    y += 6; doc.setFontSize(10); doc.text(invoiceNoteLines, 14, y);
   }
   state.generatedPdf = doc;
   showMessage("PDF generated");
@@ -441,7 +502,7 @@ function renderSendTab() {
 async function updateInvoiceStatus(status) {
   if (!state.currentInvoice?.id) return showMessage("Save or open an invoice before changing status", true);
   const result = await apiUpdateInvoiceStatus(state.currentInvoice.id, status);
-  showMessage(result.ok ? `Marked ${status}` : result.error, !result.ok);
+  showMessage(result.ok ? result.message : result.error, !result.ok);
   if (result.ok) state.currentInvoice = result.data;
   await loadAll();
 }
@@ -473,11 +534,13 @@ function bindEvents() {
   $("sendEmailBtn").addEventListener("click", sendEmail);
   $("markPaidBtn").addEventListener("click", () => updateInvoiceStatus("paid"));
   $("markUnpaidBtn").addEventListener("click", () => updateInvoiceStatus("unpaid"));
+  $("testBackendBtn").addEventListener("click", () => testBackendConnection(true));
   ["invoiceNumber", "invoiceDate", "invoiceNotes", "invoiceStatus"].forEach((id) => $(id).addEventListener("input", updateCurrentInvoiceFromFields));
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
   setStorageStatus();
   bindEvents();
+  if (apiUsesBackend()) await testBackendConnection(false);
   await loadAll();
 });

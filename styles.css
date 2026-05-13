@@ -55,7 +55,9 @@ main { width: min(980px, 100%); margin: 0 auto; padding: 14px; }
 .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .summary-card span { display: block; color: var(--muted); font-size: .9rem; }
 .summary-card strong { font-size: 1.4rem; color: var(--green); }
+.backend-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .status-pill { border: 1px solid var(--green-dark); color: var(--green); padding: 7px 10px; border-radius: 999px; font-size: .78rem; white-space: nowrap; }
+.small-btn { min-height: 34px; padding: 7px 10px; font-size: .78rem; }
 
 label { display: block; margin: 12px 0; color: var(--muted); font-weight: 700; }
 input, textarea, select {
@@ -105,6 +107,8 @@ button {
 .service-pick-btn { width: 100%; text-align: left; background: #102010; color: var(--text); border: 1px solid #244724; }
 .line-items { display: grid; gap: 10px; }
 .line-item-grid { display: grid; grid-template-columns: 1fr 86px 106px; gap: 8px; align-items: end; }
+.line-note-label { margin: 8px 0; }
+.line-note-label textarea { min-height: 74px; }
 .line-total { color: var(--green); font-weight: 900; margin: 8px 0; }
 .total-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-top: 1px solid var(--border); font-size: 1.2rem; }
 .total-row strong { color: var(--green); font-size: 1.55rem; }
