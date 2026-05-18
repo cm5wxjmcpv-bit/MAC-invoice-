@@ -78,6 +78,11 @@ button {
   cursor: pointer;
   font-size: .98rem;
 }
+button:disabled,
+button.is-loading {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
 .primary-btn { background: var(--green); color: #031003; }
 .primary-btn:hover { background: #7dff66; }
 .secondary-btn { background: var(--panel-light); color: var(--text); border: 1px solid var(--border); }
