@@ -111,6 +111,25 @@ async function apiGetCustomers() {
   } catch (error) { return fail(error); }
 }
 
+async function apiGetAllData() {
+  try {
+    if (apiUsesBackend()) {
+      const result = await callBackend("getAllData");
+      return ok({
+        customers: Array.isArray(result.data?.customers) ? result.data.customers : [],
+        services: Array.isArray(result.data?.services) ? result.data.services : [],
+        invoices: Array.isArray(result.data?.invoices) ? result.data.invoices.map(normalizeInvoice) : []
+      }, result.message);
+    }
+    seedDefaultServices();
+    return ok({
+      customers: readStore(STORAGE_KEYS.customers),
+      services: readStore(STORAGE_KEYS.services),
+      invoices: readStore(STORAGE_KEYS.invoices).map(normalizeInvoice)
+    });
+  } catch (error) { return fail(error); }
+}
+
 async function apiSaveCustomer(customer) {
   try {
     if (apiUsesBackend()) return await callBackend("saveCustomer", { customer });

@@ -24,6 +24,8 @@ const DEFAULT_SERVICES = [
   ['Window Cleaning', 75, 'Window cleaning service'],
   ['General Labor', 100, 'General labor service']
 ];
+const CACHE_KEY_ALL_DATA = 'mac_all_data_v1';
+const CACHE_TTL_SECONDS = 45;
 
 function doPost(e) {
   try {
@@ -31,16 +33,17 @@ function doPost(e) {
     const body = JSON.parse(e.postData && e.postData.contents ? e.postData.contents : '{}');
     const action = body.action;
     let data;
-    if (action === 'getCustomers') data = getRows(SHEET_NAMES.CUSTOMERS);
-    else if (action === 'saveCustomer') data = saveRow(SHEET_NAMES.CUSTOMERS, body.customer || {}, 'customer');
-    else if (action === 'deleteCustomer') data = deleteRow(SHEET_NAMES.CUSTOMERS, body.id);
+    if (action === 'getAllData') data = getAllData();
+    else if (action === 'getCustomers') data = getRows(SHEET_NAMES.CUSTOMERS);
+    else if (action === 'saveCustomer') { data = saveRow(SHEET_NAMES.CUSTOMERS, body.customer || {}, 'customer'); clearDataCache(); }
+    else if (action === 'deleteCustomer') { data = deleteRow(SHEET_NAMES.CUSTOMERS, body.id); clearDataCache(); }
     else if (action === 'getServices') data = getRows(SHEET_NAMES.SERVICES);
-    else if (action === 'saveService') data = saveRow(SHEET_NAMES.SERVICES, body.service || {}, 'service');
-    else if (action === 'deleteService') data = deleteRow(SHEET_NAMES.SERVICES, body.id);
+    else if (action === 'saveService') { data = saveRow(SHEET_NAMES.SERVICES, body.service || {}, 'service'); clearDataCache(); }
+    else if (action === 'deleteService') { data = deleteRow(SHEET_NAMES.SERVICES, body.id); clearDataCache(); }
     else if (action === 'getInvoices') data = getInvoices();
-    else if (action === 'saveInvoice') data = saveInvoice(body.invoice || {});
-    else if (action === 'updateInvoiceStatus') data = updateInvoiceStatus(body.invoiceId, body.status);
-    else if (action === 'sendInvoiceEmail') data = sendInvoiceEmail(body.invoice || {}, body.pdfBase64, body.filename);
+    else if (action === 'saveInvoice') { data = saveInvoice(body.invoice || {}); clearDataCache(); }
+    else if (action === 'updateInvoiceStatus') { data = updateInvoiceStatus(body.invoiceId, body.status); clearDataCache(); }
+    else if (action === 'sendInvoiceEmail') { data = sendInvoiceEmail(body.invoice || {}, body.pdfBase64, body.filename); clearDataCache(); }
     else throw new Error('Unknown action: ' + action);
     return jsonResponse({ ok: true, data: data, message: 'Success' });
   } catch (error) {
@@ -94,6 +97,29 @@ function seedServices() {
   DEFAULT_SERVICES.forEach(function(service) {
     saveRow(SHEET_NAMES.SERVICES, { serviceName: service[0], defaultPrice: service[1], description: service[2] }, 'service');
   });
+}
+
+function getAllData() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(CACHE_KEY_ALL_DATA);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (error) {
+      cache.remove(CACHE_KEY_ALL_DATA);
+    }
+  }
+  const data = {
+    customers: getRows(SHEET_NAMES.CUSTOMERS),
+    services: getRows(SHEET_NAMES.SERVICES),
+    invoices: getInvoices()
+  };
+  cache.put(CACHE_KEY_ALL_DATA, JSON.stringify(data), CACHE_TTL_SECONDS);
+  return data;
+}
+
+function clearDataCache() {
+  CacheService.getScriptCache().remove(CACHE_KEY_ALL_DATA);
 }
 
 function getRows(sheetName) {
