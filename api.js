@@ -59,9 +59,15 @@ async function callBackend(action, payload = {}) {
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ action, ...payload })
   });
-  const result = await response.json();
-  if (!result.ok) {
-    throw new Error(result.error || "Backend request failed");
+  const responseText = await response.text();
+  let result;
+  try {
+    result = JSON.parse(responseText);
+  } catch (error) {
+    throw new Error(`Backend returned a non-JSON response (${response.status}). Check the Apps Script deployment URL and permissions.`);
+  }
+  if (!response.ok || !result.ok) {
+    throw new Error(result.error || `Backend request failed (${response.status})`);
   }
   return result;
 }
