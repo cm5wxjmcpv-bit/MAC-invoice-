@@ -461,9 +461,13 @@ async function sendEmail() {
   }
 }
 
+function hasInvoiceContent(invoice) {
+  return Boolean(invoice && (invoice.id || invoice.customerId || (invoice.items && invoice.items.length) || invoice.notes));
+}
+
 function renderSendTab() {
   const invoice = state.currentInvoice;
-  $("sendInvoiceSummary").innerHTML = invoice ? `
+  $("sendInvoiceSummary").innerHTML = hasInvoiceContent(invoice) ? `
     <strong>Invoice #${escapeHtml(invoice.invoiceNumber || "Draft")}</strong>
     <p>${escapeHtml(invoice.customerName || "No customer")} • ${money(invoice.total || 0)}</p>
     <p>${escapeHtml(invoice.customerEmail || "No email")} • ${escapeHtml(invoice.status || "unpaid")}</p>` : "No current invoice selected.";
