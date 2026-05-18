@@ -17,6 +17,35 @@ function showMessage(message, isError = false) {
   setTimeout(() => box.className = "message-box", 3600);
 }
 
+function setButtonLoading(button, isLoading, loadingText = "Loading...") {
+  if (!button) return;
+  if (isLoading) {
+    if (!button.dataset.originalText) {
+      button.dataset.originalText = button.textContent;
+    }
+    button.disabled = true;
+    button.classList.add("is-loading");
+    button.textContent = loadingText;
+    return;
+  }
+  button.disabled = false;
+  button.classList.remove("is-loading");
+  if (button.dataset.originalText) {
+    button.textContent = button.dataset.originalText;
+    delete button.dataset.originalText;
+  }
+}
+
+async function withButtonLoading(button, loadingText, action) {
+  if (button?.disabled) return;
+  setButtonLoading(button, true, loadingText);
+  try {
+    return await Promise.resolve(action());
+  } finally {
+    setButtonLoading(button, false);
+  }
+}
+
 function setStorageStatus() {
   $("storageStatus").textContent = apiUsesBackend() ? "Google Sheets backend" : "Local storage mode";
   if (!apiUsesBackend()) showMessage("Backend not configured, using local storage");
@@ -29,6 +58,15 @@ function switchTab(tabId) {
 }
 
 async function loadAll() {
+  const allData = await apiGetAllData();
+  if (allData.ok) {
+    state.customers = Array.isArray(allData.data.customers) ? allData.data.customers : [];
+    state.services = Array.isArray(allData.data.services) ? allData.data.services : [];
+    state.invoices = Array.isArray(allData.data.invoices) ? allData.data.invoices : [];
+    renderAll();
+    return;
+  }
+  showMessage(allData.error || "Full data load failed, retrying with individual calls", true);
   const [customers, services, invoices] = await Promise.all([apiGetCustomers(), apiGetServices(), apiGetInvoices()]);
   if (!customers.ok) showMessage(customers.error, true);
   if (!services.ok) showMessage(services.error, true);
@@ -37,6 +75,22 @@ async function loadAll() {
   state.services = services.ok ? services.data : [];
   state.invoices = invoices.ok ? invoices.data : [];
   renderAll();
+}
+
+function upsertById(array, item) {
+  if (!item?.id || !Array.isArray(array)) return false;
+  const index = array.findIndex((entry) => entry.id === item.id);
+  if (index >= 0) array[index] = item; else array.push(item);
+  return true;
+}
+
+function removeById(array, id) {
+  if (!id || !Array.isArray(array)) return false;
+  const before = array.length;
+  const filtered = array.filter((entry) => entry.id !== id);
+  array.length = 0;
+  array.push(...filtered);
+  return filtered.length !== before;
 }
 
 function renderAll() {
@@ -100,20 +154,30 @@ function customerFromForm() {
   };
 }
 
-async function saveCustomer() {
+async function saveCustomer(button = null) {
+  if (button?.disabled) return;
+  return withButtonLoading(button, "Saving...", async () => {
   const customer = customerFromForm();
   if (!customer.name) return showMessage("Customer name required", true);
   const result = await apiSaveCustomer(customer);
   showMessage(result.ok ? "Saved" : result.error, !result.ok);
-  if (result.ok) clearCustomerForm();
-  await loadAll();
+  if (result.ok && upsertById(state.customers, result.data)) {
+    clearCustomerForm();
+    renderCustomers();
+    renderCustomerSelect();
+    renderInvoiceBuilder();
+  } else if (result.ok) {
+    await loadAll();
+  }
+  });
 }
 
 function clearCustomerForm() {
   ["customerId", "customerName", "customerPhone", "customerEmail", "customerAddress", "customerNotes"].forEach((id) => $(id).value = "");
 }
 
-function editCustomer(id) {
+function editCustomer(id, button = null) {
+  if (button?.disabled) return;
   const customer = state.customers.find((item) => item.id === id);
   if (!customer) return;
   $("customerId").value = customer.id;
@@ -125,19 +189,42 @@ function editCustomer(id) {
   switchTab("customersTab");
 }
 
-async function deleteCustomer(id) {
+async function deleteCustomer(id, button = null) {
+  if (button?.disabled) return;
+  return withButtonLoading(button, "Deleting...", async () => {
   if (!confirm("Delete this customer?")) return;
   const result = await apiDeleteCustomer(id);
   showMessage(result.ok ? "Deleted" : result.error, !result.ok);
-  await loadAll();
+  if (result.ok) {
+    removeById(state.customers, id);
+    if (state.currentInvoice?.customerId === id) {
+      state.currentInvoice.customerId = "";
+      state.currentInvoice.customerName = "";
+      state.currentInvoice.customerPhone = "";
+      state.currentInvoice.customerEmail = "";
+      state.currentInvoice.customerAddress = "";
+    }
+    renderCustomers();
+    renderCustomerSelect();
+    renderInvoiceBuilder();
+    renderSendTab();
+  } else {
+    await loadAll();
+  }
+  });
 }
 
-function selectCustomerForInvoice(id) {
+function selectCustomerForInvoice(id, button = null) {
+  if (button?.disabled) return;
+  const action = () => {
   if (!state.currentInvoice) startNewInvoice();
   applyCustomerToInvoice(id);
   renderInvoiceBuilder();
   switchTab("invoicesTab");
   showMessage("Customer selected for invoice");
+  };
+  if (!button) return action();
+  return withButtonLoading(button, "Loading...", action);
 }
 
 function renderCustomers() {
@@ -149,9 +236,9 @@ function renderCustomers() {
       <p>${escapeHtml(customer.phone || "No phone")} • ${escapeHtml(customer.email || "No email")}</p>
       <p>${escapeHtml(customer.address || "No address")}</p>
       <div class="item-actions three">
-        <button class="primary-btn" onclick="selectCustomerForInvoice('${customer.id}')">Use</button>
-        <button class="secondary-btn" onclick="editCustomer('${customer.id}')">Edit</button>
-        <button class="danger-btn" onclick="deleteCustomer('${customer.id}')">Delete</button>
+        <button class="primary-btn" onclick="selectCustomerForInvoice('${customer.id}', this)">Use</button>
+        <button class="secondary-btn" onclick="editCustomer('${customer.id}', this)">Edit</button>
+        <button class="danger-btn" onclick="deleteCustomer('${customer.id}', this)">Delete</button>
       </div>
     </div>`).join("") : "No customers found.";
 }
@@ -165,21 +252,30 @@ function serviceFromForm() {
   };
 }
 
-async function saveService() {
+async function saveService(button = null) {
+  if (button?.disabled) return;
+  return withButtonLoading(button, "Saving...", async () => {
   const service = serviceFromForm();
   if (!service.serviceName) return showMessage("Service name required", true);
   if (Number.isNaN(service.defaultPrice)) return showMessage("Service price must be a number", true);
   const result = await apiSaveService(service);
   showMessage(result.ok ? "Saved" : result.error, !result.ok);
-  if (result.ok) clearServiceForm();
-  await loadAll();
+  if (result.ok && upsertById(state.services, result.data)) {
+    clearServiceForm();
+    renderServices();
+    renderServicePicker();
+  } else if (result.ok) {
+    await loadAll();
+  }
+  });
 }
 
 function clearServiceForm() {
   ["serviceId", "serviceName", "servicePrice", "serviceDescription"].forEach((id) => $(id).value = "");
 }
 
-function editService(id) {
+function editService(id, button = null) {
+  if (button?.disabled) return;
   const service = state.services.find((item) => item.id === id);
   if (!service) return;
   $("serviceId").value = service.id;
@@ -189,11 +285,20 @@ function editService(id) {
   switchTab("servicesTab");
 }
 
-async function deleteService(id) {
+async function deleteService(id, button = null) {
+  if (button?.disabled) return;
+  return withButtonLoading(button, "Deleting...", async () => {
   if (!confirm("Delete this service template?")) return;
   const result = await apiDeleteService(id);
   showMessage(result.ok ? "Deleted" : result.error, !result.ok);
-  await loadAll();
+  if (result.ok) {
+    removeById(state.services, id);
+    renderServices();
+    renderServicePicker();
+  } else {
+    await loadAll();
+  }
+  });
 }
 
 function renderServices() {
@@ -202,9 +307,9 @@ function renderServices() {
       <h4>${escapeHtml(service.serviceName)} — ${money(service.defaultPrice)}</h4>
       <p>${escapeHtml(service.description || "No description")}</p>
       <div class="item-actions three">
-        <button class="primary-btn" onclick="addServiceToInvoice('${service.id}')">Add to Invoice</button>
-        <button class="secondary-btn" onclick="editService('${service.id}')">Edit</button>
-        <button class="danger-btn" onclick="deleteService('${service.id}')">Delete</button>
+        <button class="primary-btn" onclick="addServiceToInvoice('${service.id}', this)">Add to Invoice</button>
+        <button class="secondary-btn" onclick="editService('${service.id}', this)">Edit</button>
+        <button class="danger-btn" onclick="deleteService('${service.id}', this)">Delete</button>
       </div>
     </div>`).join("") : "No services yet.";
   renderServicePicker();
@@ -264,7 +369,9 @@ function renderServicePicker() {
     </button>`).join("") : "No services saved yet.";
 }
 
-function addServiceToInvoice(serviceId) {
+function addServiceToInvoice(serviceId, button = null) {
+  if (button?.disabled) return;
+  const action = () => {
   if (!state.currentInvoice) startNewInvoice();
   const service = state.services.find((item) => item.id === serviceId);
   if (!service) return;
@@ -283,6 +390,9 @@ function addServiceToInvoice(serviceId) {
   calculateInvoiceTotals();
   renderLineItems();
   showMessage(`${service.serviceName} added`);
+  };
+  if (!button) return action();
+  return withButtonLoading(button, "Loading...", action);
 }
 
 function updateLineItem(id, field, value) {
@@ -340,7 +450,9 @@ function calculateInvoiceTotals() {
   state.currentInvoice.total = state.currentInvoice.subtotal;
 }
 
-async function saveInvoice() {
+async function saveInvoice(button = null) {
+  if (button?.disabled) return;
+  return withButtonLoading(button, "Saving...", async () => {
   updateCurrentInvoiceFromFields();
   const invoice = state.currentInvoice;
   if (!invoice.customerId) return showMessage("Invoice must have a customer before saving", true);
@@ -348,15 +460,25 @@ async function saveInvoice() {
   if (!invoice.invoiceNumber) invoice.invoiceNumber = nextInvoiceNumber();
   const result = await apiSaveInvoice(invoice);
   showMessage(result.ok ? "Invoice saved" : result.error, !result.ok);
-  if (result.ok) state.currentInvoice = result.data;
-  await loadAll();
+  if (result.ok) {
+    state.currentInvoice = result.data;
+    if (!upsertById(state.invoices, result.data)) {
+      await loadAll();
+      return;
+    }
+    renderInvoices();
+    renderHome();
+    renderInvoiceBuilder();
+    renderSendTab();
+  }
+  });
 }
 
 function invoiceCard(invoice) {
   return `<div class="list-item">
     <h4>Invoice #${escapeHtml(invoice.invoiceNumber)} — ${money(invoice.total)}</h4>
     <p>${escapeHtml(invoice.customerName || "No customer")} • ${escapeHtml(invoice.date || "No date")} • ${escapeHtml(invoice.status || "unpaid")}</p>
-    <div class="item-actions"><button class="primary-btn" onclick="loadInvoice('${invoice.id}')">Open</button><button class="secondary-btn" onclick="loadInvoiceSend('${invoice.id}')">Send</button></div>
+    <div class="item-actions"><button class="primary-btn" onclick="loadInvoice('${invoice.id}', this)">Open</button><button class="secondary-btn" onclick="loadInvoiceSend('${invoice.id}', this)">Send</button></div>
   </div>`;
 }
 
@@ -364,21 +486,33 @@ function renderInvoices() {
   $("invoicesList").innerHTML = state.invoices.length ? [...state.invoices].reverse().map(invoiceCard).join("") : "No invoices saved yet.";
 }
 
-function loadInvoice(id) {
+function loadInvoice(id, button = null) {
+  if (button?.disabled) return;
+  const action = () => {
   const invoice = state.invoices.find((item) => item.id === id);
   if (!invoice) return;
   state.currentInvoice = typeof normalizeInvoice === "function" ? normalizeInvoice(JSON.parse(JSON.stringify(invoice))) : JSON.parse(JSON.stringify(invoice));
   state.generatedPdf = null;
   renderInvoiceBuilder();
   switchTab("invoicesTab");
+  };
+  if (!button) return action();
+  return withButtonLoading(button, "Loading...", action);
 }
 
-function loadInvoiceSend(id) {
-  loadInvoice(id);
-  switchTab("sendTab");
+function loadInvoiceSend(id, button = null) {
+  if (button?.disabled) return;
+  const action = () => {
+    loadInvoice(id);
+    switchTab("sendTab");
+  };
+  if (!button) return action();
+  return withButtonLoading(button, "Loading...", action);
 }
 
-function makePdf() {
+function makePdf(button = null) {
+  if (button?.disabled) return null;
+  const action = () => {
   updateCurrentInvoiceFromFields();
   if (!window.jspdf || !window.jspdf.jsPDF) {
     showMessage("PDF library did not load. Check your internet connection.", true);
@@ -432,22 +566,32 @@ function makePdf() {
   state.generatedPdf = doc;
   showMessage("PDF generated");
   return doc;
+  };
+  if (!button) return action();
+  return withButtonLoading(button, "Generating...", action);
 }
 
 function pdfFilename() {
   return `MAC-Invoice-${state.currentInvoice?.invoiceNumber || "Draft"}.pdf`;
 }
 
-function downloadPdf() {
-  const doc = state.generatedPdf || makePdf();
-  if (doc) doc.save(pdfFilename());
+function downloadPdf(button = null) {
+  if (button?.disabled) return;
+  const action = () => {
+    const doc = state.generatedPdf || makePdf();
+    if (doc) doc.save(pdfFilename());
+  };
+  if (!button) return action();
+  return withButtonLoading(button, "Preparing...", action);
 }
 
 function pdfToBase64(doc) {
   return doc.output("datauristring").split(",")[1];
 }
 
-async function sendEmail() {
+async function sendEmail(button = null) {
+  if (button?.disabled) return;
+  return withButtonLoading(button, "Sending...", async () => {
   updateCurrentInvoiceFromFields();
   if (!state.currentInvoice.customerEmail) return showMessage("Email required before sending email", true);
   const doc = makePdf();
@@ -456,25 +600,57 @@ async function sendEmail() {
   showMessage(result.ok ? "Email sent" : `Email failed: ${result.error}`, !result.ok);
   if (result.ok) {
     state.currentInvoice.emailSentAt = new Date().toISOString();
-    await apiSaveInvoice(state.currentInvoice);
-    await loadAll();
+    const saveResult = await apiSaveInvoice(state.currentInvoice);
+    if (saveResult.ok) {
+      state.currentInvoice = saveResult.data;
+      if (!upsertById(state.invoices, saveResult.data)) {
+        await loadAll();
+        return;
+      }
+      renderInvoices();
+      renderHome();
+      renderInvoiceBuilder();
+      renderSendTab();
+    } else {
+      showMessage(saveResult.error, true);
+      await loadAll();
+    }
   }
+  });
+}
+
+function hasInvoiceContent(invoice) {
+  return Boolean(invoice && (invoice.id || invoice.customerId || (invoice.items && invoice.items.length) || invoice.notes));
 }
 
 function renderSendTab() {
   const invoice = state.currentInvoice;
-  $("sendInvoiceSummary").innerHTML = invoice ? `
+  $("sendInvoiceSummary").innerHTML = hasInvoiceContent(invoice) ? `
     <strong>Invoice #${escapeHtml(invoice.invoiceNumber || "Draft")}</strong>
     <p>${escapeHtml(invoice.customerName || "No customer")} • ${money(invoice.total || 0)}</p>
     <p>${escapeHtml(invoice.customerEmail || "No email")} • ${escapeHtml(invoice.status || "unpaid")}</p>` : "No current invoice selected.";
 }
 
-async function updateInvoiceStatus(status) {
+async function updateInvoiceStatus(status, button = null) {
+  if (button?.disabled) return;
+  return withButtonLoading(button, "Updating...", async () => {
   if (!state.currentInvoice?.id) return showMessage("Save or open an invoice before changing status", true);
   const result = await apiUpdateInvoiceStatus(state.currentInvoice.id, status);
   showMessage(result.ok ? `Marked ${status}` : result.error, !result.ok);
-  if (result.ok) state.currentInvoice = result.data;
-  await loadAll();
+  if (result.ok) {
+    state.currentInvoice = result.data;
+    if (!upsertById(state.invoices, result.data)) {
+      await loadAll();
+      return;
+    }
+    renderInvoices();
+    renderHome();
+    renderInvoiceBuilder();
+    renderSendTab();
+  } else {
+    await loadAll();
+  }
+  });
 }
 
 function escapeHtml(value) {
@@ -489,21 +665,21 @@ function bindEvents() {
   document.querySelectorAll(".nav-btn").forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
   $("homeCreateInvoiceBtn").addEventListener("click", startNewInvoice);
   $("newInvoiceBtn").addEventListener("click", startNewInvoice);
-  $("saveCustomerBtn").addEventListener("click", saveCustomer);
+  $("saveCustomerBtn").addEventListener("click", (event) => saveCustomer(event.currentTarget));
   $("clearCustomerBtn").addEventListener("click", clearCustomerForm);
   $("customerSearch").addEventListener("input", renderCustomers);
-  $("saveServiceBtn").addEventListener("click", saveService);
+  $("saveServiceBtn").addEventListener("click", (event) => saveService(event.currentTarget));
   $("clearServiceBtn").addEventListener("click", clearServiceForm);
   $("invoiceCustomerSelect").addEventListener("change", (event) => { applyCustomerToInvoice(event.target.value); renderInvoiceBuilder(); });
   $("toggleServicePickerBtn").addEventListener("click", () => $("servicePicker").classList.toggle("hidden"));
-  $("saveInvoiceBtn").addEventListener("click", saveInvoice);
-  $("invoiceGeneratePdfBtn").addEventListener("click", makePdf);
-  $("invoiceSendEmailBtn").addEventListener("click", sendEmail);
-  $("sendGeneratePdfBtn").addEventListener("click", makePdf);
-  $("downloadPdfBtn").addEventListener("click", downloadPdf);
-  $("sendEmailBtn").addEventListener("click", sendEmail);
-  $("markPaidBtn").addEventListener("click", () => updateInvoiceStatus("paid"));
-  $("markUnpaidBtn").addEventListener("click", () => updateInvoiceStatus("unpaid"));
+  $("saveInvoiceBtn").addEventListener("click", (event) => saveInvoice(event.currentTarget));
+  $("invoiceGeneratePdfBtn").addEventListener("click", (event) => makePdf(event.currentTarget));
+  $("invoiceSendEmailBtn").addEventListener("click", (event) => sendEmail(event.currentTarget));
+  $("sendGeneratePdfBtn").addEventListener("click", (event) => makePdf(event.currentTarget));
+  $("downloadPdfBtn").addEventListener("click", (event) => downloadPdf(event.currentTarget));
+  $("sendEmailBtn").addEventListener("click", (event) => sendEmail(event.currentTarget));
+  $("markPaidBtn").addEventListener("click", (event) => updateInvoiceStatus("paid", event.currentTarget));
+  $("markUnpaidBtn").addEventListener("click", (event) => updateInvoiceStatus("unpaid", event.currentTarget));
   ["invoiceNumber", "invoiceDate", "invoiceNotes", "invoiceStatus"].forEach((id) => $(id).addEventListener("input", updateCurrentInvoiceFromFields));
 }
 

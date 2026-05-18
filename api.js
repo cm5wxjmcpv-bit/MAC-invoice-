@@ -59,9 +59,15 @@ async function callBackend(action, payload = {}) {
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ action, ...payload })
   });
-  const result = await response.json();
-  if (!result.ok) {
-    throw new Error(result.error || "Backend request failed");
+  const responseText = await response.text();
+  let result;
+  try {
+    result = JSON.parse(responseText);
+  } catch (error) {
+    throw new Error(`Backend returned a non-JSON response (${response.status}). Check the Apps Script deployment URL and permissions.`);
+  }
+  if (!response.ok || !result.ok) {
+    throw new Error(result.error || `Backend request failed (${response.status})`);
   }
   return result;
 }
@@ -102,6 +108,25 @@ async function apiGetCustomers() {
   try {
     if (apiUsesBackend()) return await callBackend("getCustomers");
     return ok(readStore(STORAGE_KEYS.customers));
+  } catch (error) { return fail(error); }
+}
+
+async function apiGetAllData() {
+  try {
+    if (apiUsesBackend()) {
+      const result = await callBackend("getAllData");
+      return ok({
+        customers: Array.isArray(result.data?.customers) ? result.data.customers : [],
+        services: Array.isArray(result.data?.services) ? result.data.services : [],
+        invoices: Array.isArray(result.data?.invoices) ? result.data.invoices.map(normalizeInvoice) : []
+      }, result.message);
+    }
+    seedDefaultServices();
+    return ok({
+      customers: readStore(STORAGE_KEYS.customers),
+      services: readStore(STORAGE_KEYS.services),
+      invoices: readStore(STORAGE_KEYS.invoices).map(normalizeInvoice)
+    });
   } catch (error) { return fail(error); }
 }
 
