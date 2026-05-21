@@ -19,6 +19,8 @@ A simple GitHub Pages invoice prototype for MAC Industries. It uses plain HTML, 
 - Recalculates line totals and invoice totals when quantity or price changes.
 - Generates and downloads PDF invoices in the browser with jsPDF.
 - Sends invoice PDFs by email through a Google Apps Script backend when configured.
+- Marks invoices paid/unpaid directly from invoice cards.
+- Archives paid invoices into a separate Archive tab.
 - Stores customers, services, invoices, invoice items, and email logs in Google Sheets when configured.
 
 ## Files included
@@ -137,6 +139,7 @@ Stores invoice header data:
 - `createdAt`
 - `updatedAt`
 - `emailSentAt`
+- `archivedAt`
 
 ### InvoiceItems
 Stores invoice line items:

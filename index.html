@@ -23,11 +23,14 @@
         <button id="homeCreateInvoiceBtn" class="primary-btn large-btn">Create New Invoice</button>
       </div>
       <div class="summary-grid">
-        <div class="summary-card"><span>Unpaid</span><strong id="unpaidTotal">$0.00</strong></div>
-        <div class="summary-card"><span>Paid</span><strong id="paidTotal">$0.00</strong></div>
+        <button type="button" id="homeShowUnpaidBtn" class="summary-card status-summary active" data-home-filter="unpaid"><span>Unpaid</span><strong id="unpaidTotal">$0.00</strong></button>
+        <button type="button" id="homeShowPaidBtn" class="summary-card status-summary" data-home-filter="paid"><span>Paid</span><strong id="paidTotal">$0.00</strong></button>
       </div>
       <div class="card">
-        <h3>Recent invoices</h3>
+        <div class="section-heading">
+          <h3 id="homeInvoiceListTitle">Unpaid invoices</h3>
+          <span id="homeInvoiceCount" class="status-pill">0 invoices</span>
+        </div>
         <div id="recentInvoicesList" class="list-stack empty-state">No invoices yet.</div>
       </div>
     </section>
@@ -110,6 +113,19 @@
       </div>
     </section>
 
+
+
+    <section id="archiveTab" class="tab-panel">
+      <div class="card">
+        <div class="section-heading">
+          <h2>Archived Paid Invoices</h2>
+          <span id="archiveInvoiceCount" class="status-pill">0 invoices</span>
+        </div>
+        <p class="empty-state">Paid invoices you archive will stay here instead of cluttering the main invoice lists.</p>
+        <div id="archiveInvoicesList" class="list-stack empty-state">No archived invoices yet.</div>
+      </div>
+    </section>
+
     <section id="sendTab" class="tab-panel">
       <div class="card">
         <h2>Send Invoice</h2>
@@ -132,6 +148,7 @@
     <button class="nav-btn" data-tab="customersTab">Customers</button>
     <button class="nav-btn" data-tab="servicesTab">Services</button>
     <button class="nav-btn" data-tab="invoicesTab">Invoices</button>
+    <button class="nav-btn" data-tab="archiveTab">Archive</button>
     <button class="nav-btn" data-tab="sendTab">Send</button>
   </nav>
 

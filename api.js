@@ -100,7 +100,8 @@ function normalizeInvoice(invoice = {}) {
     ...invoice,
     items,
     subtotal,
-    total: Number(invoice.total || subtotal || 0)
+    total: Number(invoice.total || subtotal || 0),
+    archivedAt: invoice.archivedAt || ""
   };
 }
 
@@ -209,7 +210,10 @@ async function apiSaveInvoice(invoice) {
 
 async function apiUpdateInvoiceStatus(invoiceId, status) {
   try {
-    if (apiUsesBackend()) return await callBackend("updateInvoiceStatus", { invoiceId, status });
+    if (apiUsesBackend()) {
+      const result = await callBackend("updateInvoiceStatus", { invoiceId, status });
+      return ok(normalizeInvoice(result.data), result.message);
+    }
     const invoices = readStore(STORAGE_KEYS.invoices).map(normalizeInvoice);
     const invoice = invoices.find((item) => item.id === invoiceId);
     if (!invoice) throw new Error("Invoice not found");

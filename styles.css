@@ -55,6 +55,15 @@ main { width: min(980px, 100%); margin: 0 auto; padding: 14px; }
 .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .summary-card span { display: block; color: var(--muted); font-size: .9rem; }
 .summary-card strong { font-size: 1.4rem; color: var(--green); }
+.status-summary {
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+}
+.status-summary.active {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px rgba(57, 255, 20, .12), 0 12px 32px rgba(0,0,0,.25);
+}
 .status-pill { border: 1px solid var(--green-dark); color: var(--green); padding: 7px 10px; border-radius: 999px; font-size: .78rem; white-space: nowrap; }
 
 label { display: block; margin: 12px 0; color: var(--muted); font-weight: 700; }
@@ -137,7 +146,7 @@ button.is-loading {
   right: 0;
   z-index: 8;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 5px;
   padding: 8px;
   background: rgba(7, 9, 7, .98);
@@ -185,4 +194,43 @@ button.is-loading {
   background: rgba(255, 255, 255, .06);
   border: 1px solid var(--border);
   color: var(--muted);
+}
+
+
+.invoice-actions {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.status-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: .72rem;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.status-badge.paid {
+  background: rgba(57, 255, 20, .16);
+  border: 1px solid var(--green-dark);
+  color: var(--green);
+}
+
+.status-badge.unpaid {
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.archive-note {
+  color: var(--muted);
+  font-size: .85rem;
+}
+
+@media (min-width: 720px) {
+  .invoice-actions {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }

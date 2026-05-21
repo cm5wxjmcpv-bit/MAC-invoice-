@@ -10,7 +10,7 @@ const SHEET_NAMES = {
 const HEADERS = {
   Customers: ['id', 'name', 'phone', 'email', 'address', 'notes', 'createdAt', 'updatedAt'],
   Services: ['id', 'serviceName', 'defaultPrice', 'description', 'createdAt', 'updatedAt'],
-  Invoices: ['id', 'invoiceNumber', 'date', 'customerId', 'customerName', 'customerPhone', 'customerEmail', 'customerAddress', 'subtotal', 'total', 'notes', 'status', 'createdAt', 'updatedAt', 'emailSentAt'],
+  Invoices: ['id', 'invoiceNumber', 'date', 'customerId', 'customerName', 'customerPhone', 'customerEmail', 'customerAddress', 'subtotal', 'total', 'notes', 'status', 'createdAt', 'updatedAt', 'emailSentAt', 'archivedAt'],
   InvoiceItems: ['id', 'invoiceId', 'serviceId', 'serviceName', 'quantity', 'unitPrice', 'lineTotal', 'lineNote'],
   EmailLog: ['id', 'invoiceId', 'invoiceNumber', 'customerEmail', 'filename', 'status', 'message', 'createdAt'],
   Settings: ['key', 'value']

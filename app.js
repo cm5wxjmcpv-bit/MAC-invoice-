@@ -4,6 +4,7 @@ const state = {
   invoices: [],
   currentInvoice: null,
   generatedPdf: null,
+  homeStatusFilter: "unpaid",
   logoDataUrl: null,
   logoLoadPromise: null
 };
@@ -38,6 +39,22 @@ function invoiceSentText(invoice) {
 
 function invoiceSentClass(invoice) {
   return invoice?.emailSentAt ? "sent-badge sent" : "sent-badge not-sent";
+}
+
+function isInvoiceArchived(invoice) {
+  return Boolean(invoice?.archivedAt);
+}
+
+function invoiceStatusClass(invoice) {
+  return `status-badge ${(invoice?.status === "paid") ? "paid" : "unpaid"}`;
+}
+
+function invoiceStatusText(invoice) {
+  return (invoice?.status === "paid") ? "Paid" : "Unpaid";
+}
+
+function sortedInvoices(invoices) {
+  return [...invoices].sort((a, b) => String(b.updatedAt || b.date || "").localeCompare(String(a.updatedAt || a.date || "")));
 }
 
 function loadInvoiceLogoDataUrl() {
@@ -187,6 +204,7 @@ function renderAll() {
   renderServices();
   renderCustomerSelect();
   renderInvoices();
+  renderArchive();
   renderHome();
   renderInvoiceBuilder();
   renderSendTab();
@@ -207,7 +225,8 @@ function blankInvoice() {
     total: 0,
     notes: "",
     status: "unpaid",
-    emailSentAt: ""
+    emailSentAt: "",
+    archivedAt: ""
   };
 }
 
@@ -229,22 +248,28 @@ function nextInvoiceNumber() {
 }
 
 function renderHome() {
-  const paid = state.invoices
-    .filter((invoice) => invoice.status === "paid")
-    .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+  const activeInvoices = state.invoices.filter((invoice) => !isInvoiceArchived(invoice));
+  const paidInvoices = activeInvoices.filter((invoice) => invoice.status === "paid");
+  const unpaidInvoices = activeInvoices.filter((invoice) => invoice.status !== "paid");
 
-  const unpaid = state.invoices
-    .filter((invoice) => invoice.status !== "paid")
-    .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+  const paid = paidInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+  const unpaid = unpaidInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
 
-  $("paidTotal").textContent = money(paid);
-  $("unpaidTotal").textContent = money(unpaid);
+  $("paidTotal").textContent = `${money(paid)} (${paidInvoices.length})`;
+  $("unpaidTotal").textContent = `${money(unpaid)} (${unpaidInvoices.length})`;
 
-  const recent = [...state.invoices]
-    .sort((a, b) => String(b.updatedAt || b.date).localeCompare(String(a.updatedAt || a.date)))
-    .slice(0, 5);
+  document.querySelectorAll("[data-home-filter]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.homeFilter === state.homeStatusFilter);
+  });
 
-  $("recentInvoicesList").innerHTML = recent.length ? recent.map(invoiceCard).join("") : "No invoices yet.";
+  const selectedInvoices = state.homeStatusFilter === "paid" ? paidInvoices : unpaidInvoices;
+  const title = state.homeStatusFilter === "paid" ? "Paid invoices" : "Unpaid invoices";
+
+  $("homeInvoiceListTitle").textContent = title;
+  $("homeInvoiceCount").textContent = `${selectedInvoices.length} invoice${selectedInvoices.length === 1 ? "" : "s"}`;
+  $("recentInvoicesList").innerHTML = selectedInvoices.length
+    ? sortedInvoices(selectedInvoices).map(invoiceCard).join("")
+    : `No ${state.homeStatusFilter} invoices.`;
 }
 
 function customerFromForm() {
@@ -678,22 +703,52 @@ async function saveInvoice(button = null) {
   });
 }
 
-function invoiceCard(invoice) {
+function invoiceCard(invoice, options = {}) {
+  const archived = isInvoiceArchived(invoice);
+  const statusAction = invoice.status === "paid"
+    ? `<button class="secondary-btn" onclick="updateInvoiceStatusById('${invoice.id}', 'unpaid', this)">Mark Unpaid</button>`
+    : `<button class="primary-btn" onclick="updateInvoiceStatusById('${invoice.id}', 'paid', this)">Mark Paid</button>`;
+  const archiveAction = archived
+    ? `<button class="secondary-btn" onclick="setInvoiceArchivedById('${invoice.id}', false, this)">Restore</button>`
+    : `<button class="secondary-btn" onclick="setInvoiceArchivedById('${invoice.id}', true, this)">Archive</button>`;
+  const archiveText = archived ? `<p class="archive-note">Archived ${escapeHtml(formatDateTime(invoice.archivedAt))}</p>` : "";
+
   return `<div class="list-item">
     <div class="invoice-card-heading">
       <h4>Invoice #${escapeHtml(invoice.invoiceNumber)} — ${money(invoice.total)}</h4>
       <span class="${invoiceSentClass(invoice)}">${escapeHtml(invoiceSentText(invoice))}</span>
     </div>
-    <p>${escapeHtml(invoice.customerName || "No customer")} • ${escapeHtml(invoice.date || "No date")} • ${escapeHtml(invoice.status || "unpaid")}</p>
-    <div class="item-actions">
+    <p>${escapeHtml(invoice.customerName || "No customer")} • ${escapeHtml(invoice.date || "No date")} • <span class="${invoiceStatusClass(invoice)}">${invoiceStatusText(invoice)}</span></p>
+    ${archiveText}
+    <div class="item-actions invoice-actions">
       <button class="primary-btn" onclick="loadInvoice('${invoice.id}', this)">Open</button>
       <button class="secondary-btn" onclick="loadInvoiceSend('${invoice.id}', this)">Send</button>
+      ${statusAction}
+      ${archiveAction}
     </div>
   </div>`;
 }
 
 function renderInvoices() {
-  $("invoicesList").innerHTML = state.invoices.length ? [...state.invoices].reverse().map(invoiceCard).join("") : "No invoices saved yet.";
+  const activeInvoices = state.invoices.filter((invoice) => !isInvoiceArchived(invoice));
+  $("invoicesList").innerHTML = activeInvoices.length
+    ? sortedInvoices(activeInvoices).map(invoiceCard).join("")
+    : "No active invoices saved yet.";
+}
+
+function renderArchive() {
+  const archivedInvoices = sortedInvoices(state.invoices.filter(isInvoiceArchived));
+  const count = archivedInvoices.length;
+
+  if ($("archiveInvoiceCount")) {
+    $("archiveInvoiceCount").textContent = `${count} invoice${count === 1 ? "" : "s"}`;
+  }
+
+  if ($("archiveInvoicesList")) {
+    $("archiveInvoicesList").innerHTML = count
+      ? archivedInvoices.map((invoice) => invoiceCard(invoice, { archivedView: true })).join("")
+      : "No archived invoices yet.";
+  }
 }
 
 function loadInvoice(id, button = null) {
@@ -1056,28 +1111,70 @@ function renderSendTab() {
 }
 
 async function updateInvoiceStatus(status, button = null) {
+  if (!state.currentInvoice?.id) {
+    return showMessage("Save or open an invoice before changing status", true);
+  }
+
+  return updateInvoiceStatusById(state.currentInvoice.id, status, button);
+}
+
+async function updateInvoiceStatusById(invoiceId, status, button = null) {
   if (button?.disabled) return;
 
   return withButtonLoading(button, "Updating...", async () => {
-    if (!state.currentInvoice?.id) {
-      return showMessage("Save or open an invoice before changing status", true);
-    }
-
-    const result = await apiUpdateInvoiceStatus(state.currentInvoice.id, status);
+    const result = await apiUpdateInvoiceStatus(invoiceId, status);
     showMessage(result.ok ? `Marked ${status}` : result.error, !result.ok);
 
     if (result.ok) {
-      state.currentInvoice = result.data;
+      const savedInvoice = result.data;
 
-      if (!upsertById(state.invoices, result.data)) {
+      if (state.currentInvoice?.id === savedInvoice.id) {
+        state.currentInvoice = savedInvoice;
+      }
+
+      if (!upsertById(state.invoices, savedInvoice)) {
         await loadAll();
         return;
       }
 
-      renderInvoices();
-      renderHome();
-      renderInvoiceBuilder();
-      renderSendTab();
+      renderAll();
+    } else {
+      await loadAll();
+    }
+  });
+}
+
+async function setInvoiceArchivedById(invoiceId, archived, button = null) {
+  if (button?.disabled) return;
+
+  return withButtonLoading(button, archived ? "Archiving..." : "Restoring...", async () => {
+    const invoice = state.invoices.find((item) => item.id === invoiceId);
+
+    if (!invoice) {
+      return showMessage("Invoice not found", true);
+    }
+
+    const updatedInvoice = {
+      ...invoice,
+      archivedAt: archived ? new Date().toISOString() : ""
+    };
+
+    const result = await apiSaveInvoice(updatedInvoice);
+    showMessage(result.ok ? (archived ? "Invoice archived" : "Invoice restored") : result.error, !result.ok);
+
+    if (result.ok) {
+      const savedInvoice = result.data;
+
+      if (state.currentInvoice?.id === savedInvoice.id) {
+        state.currentInvoice = savedInvoice;
+      }
+
+      if (!upsertById(state.invoices, savedInvoice)) {
+        await loadAll();
+        return;
+      }
+
+      renderAll();
     } else {
       await loadAll();
     }
@@ -1104,6 +1201,12 @@ function bindEvents() {
   });
 
   $("homeCreateInvoiceBtn").addEventListener("click", startNewInvoice);
+  document.querySelectorAll("[data-home-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.homeStatusFilter = button.dataset.homeFilter || "unpaid";
+      renderHome();
+    });
+  });
   $("newInvoiceBtn").addEventListener("click", startNewInvoice);
   $("saveCustomerBtn").addEventListener("click", (event) => saveCustomer(event.currentTarget));
   $("clearCustomerBtn").addEventListener("click", clearCustomerForm);
