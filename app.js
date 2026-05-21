@@ -3,12 +3,66 @@ const state = {
   services: [],
   invoices: [],
   currentInvoice: null,
-  generatedPdf: null
+  generatedPdf: null,
+  logoDataUrl: null,
+  logoLoadPromise: null
 };
+
+const INVOICE_LOGO_URL = "mac-industries-logo-transparent.png";
 
 const $ = (id) => document.getElementById(id);
 const money = (value) => `$${(Number(value) || 0).toFixed(2)}`;
 const today = () => new Date().toISOString().slice(0, 10);
+
+function formatDateTime(value) {
+  if (!value) return "";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function invoiceSentText(invoice) {
+  return invoice?.emailSentAt ? `Sent ${formatDateTime(invoice.emailSentAt)}` : "Not sent";
+}
+
+function invoiceSentClass(invoice) {
+  return invoice?.emailSentAt ? "sent-badge sent" : "sent-badge not-sent";
+}
+
+function loadInvoiceLogoDataUrl() {
+  if (state.logoDataUrl) return Promise.resolve(state.logoDataUrl);
+  if (state.logoLoadPromise) return state.logoLoadPromise;
+
+  state.logoLoadPromise = new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth || image.width;
+      canvas.height = image.naturalHeight || image.height;
+
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+
+      state.logoDataUrl = canvas.toDataURL("image/png");
+      resolve(state.logoDataUrl);
+    };
+    image.onerror = () => resolve(null);
+    image.src = INVOICE_LOGO_URL;
+  });
+
+  return state.logoLoadPromise;
+}
 
 function showMessage(message, isError = false) {
   const box = $("messageBox");
@@ -152,7 +206,8 @@ function blankInvoice() {
     subtotal: 0,
     total: 0,
     notes: "",
-    status: "unpaid"
+    status: "unpaid",
+    emailSentAt: ""
   };
 }
 
@@ -625,7 +680,10 @@ async function saveInvoice(button = null) {
 
 function invoiceCard(invoice) {
   return `<div class="list-item">
-    <h4>Invoice #${escapeHtml(invoice.invoiceNumber)} — ${money(invoice.total)}</h4>
+    <div class="invoice-card-heading">
+      <h4>Invoice #${escapeHtml(invoice.invoiceNumber)} — ${money(invoice.total)}</h4>
+      <span class="${invoiceSentClass(invoice)}">${escapeHtml(invoiceSentText(invoice))}</span>
+    </div>
     <p>${escapeHtml(invoice.customerName || "No customer")} • ${escapeHtml(invoice.date || "No date")} • ${escapeHtml(invoice.status || "unpaid")}</p>
     <div class="item-actions">
       <button class="primary-btn" onclick="loadInvoice('${invoice.id}', this)">Open</button>
@@ -673,10 +731,10 @@ function loadInvoiceSend(id, button = null) {
   return withButtonLoading(button, "Loading...", action);
 }
 
-function makePdf(button = null) {
+async function makePdf(button = null) {
   if (button?.disabled) return null;
 
-  const action = () => {
+  const action = async () => {
     updateCurrentInvoiceFromFields();
 
     if (!window.jspdf || !window.jspdf.jsPDF) {
@@ -688,6 +746,16 @@ function makePdf(button = null) {
     const doc = new window.jspdf.jsPDF();
 
     let y = 18;
+    const logoDataUrl = await loadInvoiceLogoDataUrl();
+
+    if (logoDataUrl) {
+      try {
+        doc.addImage(logoDataUrl, "PNG", 14, 10, 64, 64);
+        y = 82;
+      } catch (error) {
+        console.warn("Invoice logo could not be added to PDF", error);
+      }
+    }
 
     doc.setFontSize(20);
     doc.text(APP_CONFIG.COMPANY_NAME, 14, y);
@@ -795,11 +863,11 @@ function pdfFilename() {
   return `MAC-Invoice-${state.currentInvoice?.invoiceNumber || "Draft"}.pdf`;
 }
 
-function downloadPdf(button = null) {
+async function downloadPdf(button = null) {
   if (button?.disabled) return;
 
-  const action = () => {
-    const doc = state.generatedPdf || makePdf();
+  const action = async () => {
+    const doc = state.generatedPdf || await makePdf();
     if (doc) doc.save(pdfFilename());
   };
 
@@ -822,14 +890,33 @@ async function sendEmail(button = null) {
       return showMessage("Email required before sending email", true);
     }
 
-    const doc = makePdf();
+    const doc = await makePdf();
     if (!doc) return;
 
     const result = await apiSendInvoiceEmail(state.currentInvoice, pdfToBase64(doc), pdfFilename());
     showMessage(result.ok ? "Email sent" : `Email failed: ${result.error}`, !result.ok);
 
     if (result.ok) {
-      state.currentInvoice.emailSentAt = new Date().toISOString();
+      const sentInvoice = result.data?.invoice || result.data;
+
+      if (sentInvoice?.id) {
+        state.currentInvoice = typeof normalizeInvoice === "function"
+          ? normalizeInvoice(sentInvoice)
+          : sentInvoice;
+
+        if (!upsertById(state.invoices, state.currentInvoice)) {
+          await loadAll();
+          return;
+        }
+
+        renderInvoices();
+        renderHome();
+        renderInvoiceBuilder();
+        renderSendTab();
+        return;
+      }
+
+      state.currentInvoice.emailSentAt = result.data?.emailSentAt || new Date().toISOString();
 
       const saveResult = await apiSaveInvoice(state.currentInvoice);
 
@@ -862,6 +949,7 @@ function renderSendTab() {
 
   $("sendInvoiceSummary").innerHTML = hasInvoiceContent(invoice) ? `
     <strong>Invoice #${escapeHtml(invoice.invoiceNumber || "Draft")}</strong>
+    <span class="${invoiceSentClass(invoice)}">${escapeHtml(invoiceSentText(invoice))}</span>
     <p>${escapeHtml(invoice.customerName || "No customer")} • ${money(invoice.total || 0)}</p>
     <p>${escapeHtml(invoice.customerEmail || "No email")} • ${escapeHtml(invoice.status || "unpaid")}</p>` : "No current invoice selected.";
 }

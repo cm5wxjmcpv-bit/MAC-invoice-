@@ -244,8 +244,8 @@ function sendInvoiceEmail(invoice, pdfBase64, filename) {
     });
     logEmail(invoice, safeFilename, 'sent', 'Email sent');
     invoice.emailSentAt = new Date().toISOString();
-    saveInvoice(invoice);
-    return { sent: true, emailSentAt: invoice.emailSentAt };
+    const savedInvoice = saveInvoice(invoice);
+    return { sent: true, emailSentAt: invoice.emailSentAt, invoice: savedInvoice };
   } catch (error) {
     logEmail(invoice, safeFilename, 'failed', error.message || String(error));
     throw error;
