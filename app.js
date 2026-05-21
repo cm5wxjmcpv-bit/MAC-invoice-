@@ -140,7 +140,6 @@ function switchTab(tabId) {
     btn.classList.toggle("active", btn.dataset.tab === tabId);
   });
 
-  if (tabId === "sendTab") renderSendTab();
 }
 
 async function loadAll() {
@@ -207,7 +206,6 @@ function renderAll() {
   renderArchive();
   renderHome();
   renderInvoiceBuilder();
-  renderSendTab();
 }
 
 function blankInvoice() {
@@ -235,7 +233,6 @@ function startNewInvoice() {
   state.generatedPdf = null;
 
   renderInvoiceBuilder();
-  renderSendTab();
   switchTab("invoicesTab");
 }
 
@@ -352,7 +349,6 @@ async function deleteCustomer(id, button = null) {
       renderCustomers();
       renderCustomerSelect();
       renderInvoiceBuilder();
-      renderSendTab();
     } else {
       await loadAll();
     }
@@ -698,7 +694,6 @@ async function saveInvoice(button = null) {
       renderInvoices();
       renderHome();
       renderInvoiceBuilder();
-      renderSendTab();
     }
   });
 }
@@ -722,7 +717,6 @@ function invoiceCard(invoice, options = {}) {
     ${archiveText}
     <div class="item-actions invoice-actions">
       <button class="primary-btn" onclick="loadInvoice('${invoice.id}', this)">Open</button>
-      <button class="secondary-btn" onclick="loadInvoiceSend('${invoice.id}', this)">Send</button>
       ${statusAction}
       ${archiveAction}
     </div>
@@ -766,19 +760,6 @@ function loadInvoice(id, button = null) {
 
     renderInvoiceBuilder();
     switchTab("invoicesTab");
-  };
-
-  if (!button) return action();
-
-  return withButtonLoading(button, "Loading...", action);
-}
-
-function loadInvoiceSend(id, button = null) {
-  if (button?.disabled) return;
-
-  const action = () => {
-    loadInvoice(id);
-    switchTab("sendTab");
   };
 
   if (!button) return action();
@@ -1068,7 +1049,6 @@ async function sendEmail(button = null) {
         renderInvoices();
         renderHome();
         renderInvoiceBuilder();
-        renderSendTab();
         return;
       }
 
@@ -1087,7 +1067,6 @@ async function sendEmail(button = null) {
         renderInvoices();
         renderHome();
         renderInvoiceBuilder();
-        renderSendTab();
       } else {
         showMessage(saveResult.error, true);
         await loadAll();
@@ -1098,16 +1077,6 @@ async function sendEmail(button = null) {
 
 function hasInvoiceContent(invoice) {
   return Boolean(invoice && (invoice.id || invoice.customerId || (invoice.items && invoice.items.length) || invoice.notes));
-}
-
-function renderSendTab() {
-  const invoice = state.currentInvoice;
-
-  $("sendInvoiceSummary").innerHTML = hasInvoiceContent(invoice) ? `
-    <strong>Invoice #${escapeHtml(invoice.invoiceNumber || "Draft")}</strong>
-    <span class="${invoiceSentClass(invoice)}">${escapeHtml(invoiceSentText(invoice))}</span>
-    <p>${escapeHtml(invoice.customerName || "No customer")} • ${money(invoice.total || 0)}</p>
-    <p>${escapeHtml(invoice.customerEmail || "No email")} • ${escapeHtml(invoice.status || "unpaid")}</p>` : "No current invoice selected.";
 }
 
 async function updateInvoiceStatus(status, button = null) {
@@ -1135,6 +1104,11 @@ async function updateInvoiceStatusById(invoiceId, status, button = null) {
       if (!upsertById(state.invoices, savedInvoice)) {
         await loadAll();
         return;
+      }
+
+      const homeTabIsActive = $("homeTab")?.classList.contains("active");
+      if (homeTabIsActive) {
+        state.homeStatusFilter = status === "paid" ? "paid" : "unpaid";
       }
 
       renderAll();
@@ -1221,11 +1195,6 @@ function bindEvents() {
   $("saveInvoiceBtn").addEventListener("click", (event) => saveInvoice(event.currentTarget));
   $("invoiceGeneratePdfBtn").addEventListener("click", (event) => makePdf(event.currentTarget));
   $("invoiceSendEmailBtn").addEventListener("click", (event) => sendEmail(event.currentTarget));
-  $("sendGeneratePdfBtn").addEventListener("click", (event) => makePdf(event.currentTarget));
-  $("downloadPdfBtn").addEventListener("click", (event) => downloadPdf(event.currentTarget));
-  $("sendEmailBtn").addEventListener("click", (event) => sendEmail(event.currentTarget));
-  $("markPaidBtn").addEventListener("click", (event) => updateInvoiceStatus("paid", event.currentTarget));
-  $("markUnpaidBtn").addEventListener("click", (event) => updateInvoiceStatus("unpaid", event.currentTarget));
 
   ["invoiceNumber", "invoiceDate", "invoiceNotes", "invoiceStatus"].forEach((id) => {
     $(id).addEventListener("input", updateCurrentInvoiceFromFields);
