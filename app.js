@@ -2,6 +2,9 @@ const state = {
   customers: [],
   services: [],
   invoices: [],
+  quotes: [],
+  currentQuote: null,
+  generatedQuotePdf: null,
   currentInvoice: null,
   generatedPdf: null,
   homeStatusFilter: "unpaid",
@@ -206,6 +209,7 @@ function renderAll() {
   renderArchive();
   renderHome();
   renderInvoiceBuilder();
+  if (typeof renderQuoteBuilder === "function") renderQuoteBuilder();
 }
 
 function blankInvoice() {
