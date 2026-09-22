@@ -243,3 +243,56 @@ Manually verify these items before considering the prototype ready:
 4. `app.js`
 
 Do not change this order unless you also update the code dependencies.
+
+## Quotes (separate from invoices)
+
+Quotes and Quote Archive share the existing customer and service lists, but use separate
+records, browser storage (`mac_quotes_v1`), API actions, PDF rendering, and email logs.
+Quotes can be saved, edited, downloaded, emailed, archived, restored, and permanently
+deleted after confirmation. Quote PDFs have no number, status, or Bill To label.
+
+### Update the existing Apps Script deployment
+
+1. Open the **existing invoice database spreadsheet**, then **Extensions → Apps Script**.
+2. Replace the contents of the existing backend code file with this repository's
+   `apps-script-backend.gs`. Do not add a second copy of the same functions.
+3. Save, select `ensureSetup`, and click **Run**. This creates missing `Quotes`,
+   `QuoteItems`, and `QuoteEmailLog` sheets/headers; it does not clear existing records.
+4. Choose **Deploy → Manage deployments**, select the existing web app, click the
+   edit/pencil icon, choose **New version**, and click **Deploy**. Keep the existing
+   execution/access settings. Updating the existing deployment preserves its URL;
+   **leave `config.js` unchanged**.
+5. Reload the website. If a backend-update notice is visible in Quotes, click
+   **Retry Quotes**. The form only becomes available after `getQuotes` succeeds.
+6. Save a test quote for your own customer record, download it, and send it to your
+   own email address. Check the attachment and the sent timestamp. Live delivery
+   requires this manual check; automated tests use a simulated mail service.
+
+No invoice migration is required. The new actions are `getQuotes`, `saveQuote`,
+`deleteQuote`, and `sendQuoteEmail`. `getAllData` retains its existing response and
+cache behavior; quotes load independently. Backend failures do not silently switch
+quote saves to local storage. Local mode is selected by a blank backend URL and
+supports all quote operations except email.
+
+Quote saves recalculate totals server-side and preserve sent metadata. A script lock
+serializes quote actions. Stable draft IDs prevent duplicate records on retries.
+Email request IDs prevent automatic retries from sending the same message twice.
+If a send is recorded as `sending` or `failed`, inspect `QuoteEmailLog` before reopening
+the quote and deliberately trying again. As with the invoice system, Google Sheets
+is not a transactional database; service outages during a multi-step write require
+checking the saved record before retrying.
+
+### Automated regression tests
+
+- `node tests/backend.cjs` runs the actual Apps Script against in-memory Sheets and
+  Mail adapters. It checks storage isolation, calculations, editing, archive/restore,
+  deletion, send logs, send retry deduplication, a failed item write, and invoice actions.
+- `tests/browser.cjs` uses Playwright and actual jsPDF. Set `BASELINE_DIR` to an export
+  of commit `3acf363bca982004cdaf0fa2def82f2602958f88`, and `JSPDF_PATH` to the jsPDF
+  2.5.1 UMD script. Install Playwright and its Chromium runtime first.
+  Optional `CHROMIUM_PATH` selects an installed browser and `TEST_OUTPUT` selects a
+  temporary output directory. Run `node tests/browser.cjs`.
+- Browser tests compare the original/current invoice PDF bytes after normalizing
+  PDF metadata; exercise quote and invoice workflows; check 375/768/1280px layouts;
+  and use the actual Apps Script via a mocked network endpoint for email tests.
+  No live customer records or messages are used.

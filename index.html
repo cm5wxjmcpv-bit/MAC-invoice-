@@ -126,6 +126,32 @@
       </div>
     </section>
 
+    <section id="quotesTab" class="tab-panel">
+      <div class="card">
+        <div class="section-heading"><h2>Quote Builder</h2><button id="newQuoteBtn" class="secondary-btn">New</button></div>
+        <p id="quoteAvailability" role="status">Loading quotes...</p>
+        <button id="retryQuotesBtn" class="secondary-btn hidden">Retry Quotes</button>
+        <fieldset id="quoteFields" disabled>
+          <label>Date <input id="quoteDate" type="date"></label>
+          <label>Select customer <select id="quoteCustomerSelect"></select></label>
+          <div id="quoteCustomerCard" class="mini-card">No customer selected.</div>
+          <div class="section-heading"><h3>Line items</h3><button id="quoteAddServicesBtn" class="primary-btn">Add Services</button></div>
+          <div id="quoteServicePicker" class="service-picker hidden"></div>
+          <div id="quoteLineItems" class="line-items"></div>
+          <div class="total-row"><span>Quote total</span><strong id="quoteTotal">$0.00</strong></div>
+          <label>Notes <textarea id="quoteNotes" rows="3"></textarea></label>
+          <div class="button-row">
+            <button id="saveQuoteBtn" class="primary-btn">Save Quote</button>
+            <button id="quotePdfBtn" class="secondary-btn">Download Quote PDF</button>
+            <button id="quoteEmailBtn" class="secondary-btn">Send Quote Email</button>
+          </div>
+        </fieldset>
+      </div>
+      <div class="card"><h3>Saved Quotes</h3><div id="quotesList" class="list-stack"></div></div>
+    </section>
+    <section id="quoteArchiveTab" class="tab-panel">
+      <div class="card"><h2>Quote Archive</h2><div id="quoteArchiveList" class="list-stack"></div></div>
+    </section>
   </main>
 
   <div id="messageBox" class="message-box" aria-live="polite"></div>
@@ -136,11 +162,14 @@
     <button class="nav-btn" data-tab="servicesTab">Services</button>
     <button class="nav-btn" data-tab="invoicesTab">Invoices</button>
     <button class="nav-btn" data-tab="archiveTab">Archive</button>
+    <button class="nav-btn" data-tab="quotesTab">Quotes</button>
+    <button class="nav-btn" data-tab="quoteArchiveTab">Quote Archive</button>
   </nav>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="config.js"></script>
   <script src="api.js"></script>
   <script src="app.js"></script>
+  <script src="quotes.js"></script>
 </body>
 </html>

@@ -234,3 +234,16 @@ button.is-loading {
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* Seven tabs retain a single scrollable row on narrow screens. */
+.bottom-nav { grid-template-columns: repeat(7, minmax(78px, 1fr)); overflow-x: auto; }
+#quoteFields { border: 0; padding: 0; margin: 0; min-width: 0; }
+#quotesTab .list-item, #quoteArchiveTab .list-item, #quoteCustomerCard { overflow-wrap: anywhere; }
+#quotesTab .line-item-grid > *, #quotesTab input { min-width: 0; }
+#quotesTab .sent-badge, #quoteArchiveTab .sent-badge { white-space: normal; }
+#quotesTab .total-row { flex-wrap: wrap; gap: 8px; }
+@media (max-width: 480px) {
+  #quotesTab .line-item-grid { grid-template-columns: 1fr 1fr; }
+  #quotesTab .line-item-grid > :first-child { grid-column: 1 / -1; }
+  #quoteArchiveTab .item-actions { grid-template-columns: 1fr; }
+}

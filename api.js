@@ -232,3 +232,63 @@ async function apiSendInvoiceEmail(invoice, pdfBase64, filename) {
     return await callBackend("sendInvoiceEmail", { invoice, pdfBase64, filename });
   } catch (error) { return fail(error); }
 }
+
+// Separate quote storage and actions: never fall back locally after a backend error.
+const QUOTE_STORAGE_KEY = "mac_quotes_v1";
+function normalizeQuote(quote = {}) {
+  const items = (Array.isArray(quote.items) ? quote.items : []).map(item => {
+    const quantity = Number(item.quantity ?? 1), unitPrice = Number(item.unitPrice ?? 0);
+    if (!Number.isFinite(quantity) || !Number.isFinite(unitPrice) || quantity < 0 || unitPrice < 0 || !Number.isFinite(quantity * unitPrice)) throw new Error("Quote quantity and price must be finite, nonnegative numbers");
+    return { id: item.id || apiId("quoteitem"), quoteId: quote.id || "", serviceId: item.serviceId || "", serviceName: String(item.serviceName || ""), quantity, unitPrice, lineTotal: quantity * unitPrice, lineNote: String(item.lineNote || "") };
+  });
+  const total = items.reduce((sum, item) => sum + item.lineTotal, 0);
+  if (!Number.isFinite(total)) throw new Error("Quote total is too large");
+  const saved = { items, subtotal: total, total };
+  ["id", "date", "customerId", "customerName", "customerPhone", "customerEmail", "customerAddress", "notes", "createdAt", "updatedAt", "emailSentAt", "archivedAt"].forEach(key => saved[key] = quote[key] || "");
+  return saved;
+}
+function validateQuote(quote) {
+  if (!quote.customerId) throw new Error("Quote requires a customer");
+  if (!quote.items.length) throw new Error("Quote requires at least one line item");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(quote.date)) throw new Error("Quote date is required");
+}
+function readQuotesStore() {
+  const records = JSON.parse(localStorage.getItem(QUOTE_STORAGE_KEY) || "[]");
+  if (!Array.isArray(records)) throw new Error("Saved quotes could not be read");
+  return records.map(normalizeQuote);
+}
+async function apiGetQuotes() {
+  try {
+    const result = apiUsesBackend() ? await callBackend("getQuotes") : ok(readQuotesStore());
+    if (!Array.isArray(result.data)) throw new Error("Quote backend needs to be updated");
+    return ok(result.data.map(normalizeQuote));
+  } catch (error) { return fail(error); }
+}
+async function apiSaveQuote(quote) {
+  try {
+    const normalized = normalizeQuote(quote);
+    validateQuote(normalized);
+    if (apiUsesBackend()) return await callBackend("saveQuote", { quote: normalized });
+    const records = readQuotesStore(), previous = records.find(item => item.id === normalized.id), now = apiNow();
+    const saved = normalizeQuote({ ...normalized, id: normalized.id || apiId("quote"), createdAt: previous?.createdAt || now, updatedAt: now, emailSentAt: previous?.emailSentAt || "" });
+    const index = records.findIndex(item => item.id === saved.id);
+    if (index < 0) records.push(saved); else records[index] = saved;
+    writeStore(QUOTE_STORAGE_KEY, records);
+    return ok(saved);
+  } catch (error) { return fail(error); }
+}
+async function apiDeleteQuote(id) {
+  try {
+    if (apiUsesBackend()) return await callBackend("deleteQuote", { id });
+    const records = readQuotesStore();
+    if (!records.find(item => item.id === id)?.archivedAt) throw new Error("Archive a quote before deleting it");
+    writeStore(QUOTE_STORAGE_KEY, records.filter(item => item.id !== id));
+    return ok({ id });
+  } catch (error) { return fail(error); }
+}
+async function apiSendQuoteEmail(quote, pdfBase64, filename, requestId) {
+  try {
+    if (!apiUsesBackend()) throw new Error("Email requires the Google Apps Script backend. Your quote can still be saved and downloaded locally.");
+    return await callBackend("sendQuoteEmail", { quote, pdfBase64, filename, requestId });
+  } catch (error) { return fail(error); }
+}
