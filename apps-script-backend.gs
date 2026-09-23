@@ -28,7 +28,8 @@ const DEFAULT_SERVICES = [
   ['General Labor', 100, 'General labor service']
 ];
 const CACHE_KEY_ALL_DATA = 'mac_all_data_v1';
-const CACHE_TTL_SECONDS = 45;
+const CACHE_TTL_SECONDS = 300;
+const CACHE_KEY_SCHEMA_READY = 'mac_schema_ready_quotes_v2';
 
 function doPost(e) {
   try {
@@ -69,11 +70,14 @@ function ss() {
 }
 
 function ensureSetup() {
+  const cache = CacheService.getScriptCache();
+  if (cache.get(CACHE_KEY_SCHEMA_READY)) return;
   Object.keys(HEADERS).forEach(function(name) {
     const sheet = ss().getSheetByName(name) || ss().insertSheet(name);
     ensureHeaders(sheet, HEADERS[name]);
   });
   seedServices();
+  cache.put(CACHE_KEY_SCHEMA_READY, '1', 21600);
 }
 
 function ensureHeaders(sheet, headers) {

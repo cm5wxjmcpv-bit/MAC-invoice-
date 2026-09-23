@@ -54,23 +54,33 @@ function seedDefaultServices() {
 seedDefaultServices();
 
 async function callBackend(action, payload = {}) {
-  const response = await fetch(APP_CONFIG.APPS_SCRIPT_URL, {
-    cache: "no-store",
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ action, ...payload })
-  });
-  const responseText = await response.text();
-  let result;
-  try {
-    result = JSON.parse(responseText);
-  } catch (error) {
-    throw new Error(`Backend returned a non-JSON response (${response.status}). Check the Apps Script deployment URL and permissions.`);
+  const readOnly = ["getAllData", "getCustomers", "getServices", "getInvoices", "getQuotes"].includes(action);
+  for (let attempt = 0; attempt <= (readOnly ? 1 : 0); attempt++) {
+    let response;
+    try {
+      response = await fetch(APP_CONFIG.APPS_SCRIPT_URL, {
+        cache: "no-store",
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action, ...payload })
+      });
+    } catch (error) {
+      if (attempt || !readOnly) throw error;
+      continue;
+    }
+    const responseText = await response.text();
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch (error) {
+      if (readOnly && !attempt) continue;
+      throw new Error(`Backend returned a non-JSON response (${response.status}). Check the Apps Script deployment URL and permissions.`);
+    }
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || `Backend request failed (${response.status})`);
+    }
+    return result;
   }
-  if (!response.ok || !result.ok) {
-    throw new Error(result.error || `Backend request failed (${response.status})`);
-  }
-  return result;
 }
 
 function ok(data = {}, message = "Success") {

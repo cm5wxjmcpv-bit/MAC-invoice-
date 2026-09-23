@@ -2,12 +2,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const calls = [];
-let override;
+let override, failOnce = false;
 const context = vm.createContext({
   URL, console, APP_CONFIG: { APPS_SCRIPT_URL: 'https://example.com/exec?existing=yes' },
   localStorage: { getItem: () => null, setItem: () => {} },
   fetch: async (url, options) => {
     calls.push({url, options});
+    if (failOnce) { failOnce = false; return {ok:false,status:404,text:async () => "<html>Missing response</html>"}; }
     const body = JSON.parse(options.body);
     const data = body.action === 'getQuotes' ? [{id:'quote-test', items:[]}] : {customers:[{id:'customer-test'}],services:[],invoices:[]};
     const result = override || {ok:true,data};
@@ -27,6 +28,11 @@ vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../api.js')
     assert.equal(options.cache,'no-store');
     assert.equal(options.headers['Content-Type'],'text/plain;charset=utf-8');
   }
+  failOnce = true;
+  const retryStart = calls.length;
+  const retried = await vm.runInContext('apiGetQuotes()',context);
+  assert.equal(retried.ok,true);
+  assert.equal(calls.length,retryStart+2,'Retry transient read once');
   override = {ok:true,data:{app:'health'}};
   assert.equal((await vm.runInContext('apiGetAllData()',context)).ok,false);
   const badQuote = await vm.runInContext('apiGetQuotes()',context);
@@ -37,5 +43,9 @@ vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../api.js')
   await assert.rejects(vm.runInContext('callBackend("sendQuoteEmail",{requestId:"stable-email-id"})',context),/send failed/);
   assert.equal(calls.length,before+1,'Do not retry email mutations');
   assert.equal(JSON.parse(calls.at(-1).options.body).requestId,'stable-email-id');
+  override = undefined; failOnce = true;
+  const mutationStart = calls.length;
+  await assert.rejects(vm.runInContext('callBackend("sendQuoteEmail",{requestId:"second-email-id"})',context),/non-JSON response/);
+  assert.equal(calls.length,mutationStart+1,'Never retry non-JSON email responses');
   console.log('PASS: concurrent and repeated reads, malformed responses, preserved email payload, no mutation retries');
 })().catch(error => {console.error(error);process.exitCode=1;});

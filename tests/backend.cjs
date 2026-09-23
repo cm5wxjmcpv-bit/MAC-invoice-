@@ -3,11 +3,11 @@ const fs = require('node:fs');
 const assert = require('node:assert/strict');
 function createBackend(source = fs.readFileSync('apps-script-backend.gs', 'utf8')) {
   const sheets = new Map(), emails = [];
-  let failMail = false, failItem = false;
+  let failMail = false, failItem = false, schemaScans = 0;
   class Sheet {
     constructor() { this.rows = []; }
     getLastRow() { return this.rows.length; }
-    getLastColumn() { return Math.max(0, ...this.rows.map(r => r.length)); }
+    getLastColumn() { schemaScans++; return Math.max(0, ...this.rows.map(r => r.length)); }
     getRange(row, col, n = 1, m = 1) {
       return {
         getValues: () => Array.from({length:n}, (_,i) => Array.from({length:m}, (_,j) => this.rows[row-1+i]?.[col-1+j] ?? '')),
@@ -30,11 +30,15 @@ function createBackend(source = fs.readFileSync('apps-script-backend.gs', 'utf8'
   });
   vm.runInContext(source, ctx);
   const call = (action,payload={}) => ctx.doPost({postData:{contents:JSON.stringify({action,...payload})}});
-  return {ctx,call,sheets,emails,failMail: v=>failMail=v,failItem:()=>failItem=true};
+  return {ctx,call,sheets,emails,schemaScans:()=>schemaScans,failMail: v=>failMail=v,failItem:()=>failItem=true};
 }
 function runTests() {
   const b = createBackend();
   assert(b.call('getQuotes').ok);
+  const initialScans = b.schemaScans();
+  assert(initialScans > 0);
+  assert(b.call('getQuotes').ok);
+  assert.equal(b.schemaScans(), initialScans + 2, 'Repeated reads should scan only quote tables, skipping schema setup');
   const customer = b.call('saveCustomer',{customer:{name:'Test Customer',email:'qa@example.invalid'}}).data;
   const invoice = b.call('saveInvoice',{invoice:{customerId:customer.id,invoiceNumber:'1001',status:'unpaid',total:25,items:[{serviceName:'Wash',quantity:1,unitPrice:25}],customerEmail:customer.email}}).data;
   const snapshot = () => JSON.stringify(['Customers','Services','Invoices','InvoiceItems','EmailLog','Settings'].map(n=>b.sheets.get(n).rows));
