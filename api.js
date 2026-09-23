@@ -53,15 +53,8 @@ function seedDefaultServices() {
 
 seedDefaultServices();
 
-let backendRequestSequence = 0;
-const backendSessionId = apiId("session");
-
 async function callBackend(action, payload = {}) {
-  // Apps Script redirects responses. Keep each request distinct, including concurrent reads.
-  const url = new URL(APP_CONFIG.APPS_SCRIPT_URL);
-  url.searchParams.set("action", action);
-  url.searchParams.set("requestId", `${backendSessionId}_${++backendRequestSequence}`);
-  const response = await fetch(url.toString(), {
+  const response = await fetch(APP_CONFIG.APPS_SCRIPT_URL, {
     cache: "no-store",
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
