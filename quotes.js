@@ -16,7 +16,7 @@ async function loadQuotes() {
   quotesReady = result.ok;
   $("quoteFields").disabled = !quotesReady;
   $("retryQuotesBtn").classList.toggle("hidden", quotesReady);
-  $("quoteAvailability").textContent = result.ok ? "" : `Quotes unavailable: ${result.error}. If the backend has not been updated, deploy the new Apps Script version, then retry.`;
+  $("quoteAvailability").textContent = result.ok ? "" : `Quotes unavailable: ${result.error}${/Unknown action.*getQuotes/i.test(result.error) ? ". Deploy the updated Apps Script version, then retry." : ""}`;
   if (result.ok) state.quotes = result.data;
   renderQuotes(); renderQuoteBuilder();
 }

@@ -53,8 +53,16 @@ function seedDefaultServices() {
 
 seedDefaultServices();
 
+let backendRequestSequence = 0;
+const backendSessionId = apiId("session");
+
 async function callBackend(action, payload = {}) {
-  const response = await fetch(APP_CONFIG.APPS_SCRIPT_URL, {
+  // Apps Script redirects responses. Keep each request distinct, including concurrent reads.
+  const url = new URL(APP_CONFIG.APPS_SCRIPT_URL);
+  url.searchParams.set("action", action);
+  url.searchParams.set("requestId", `${backendSessionId}_${++backendRequestSequence}`);
+  const response = await fetch(url.toString(), {
+    cache: "no-store",
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ action, ...payload })
@@ -116,6 +124,9 @@ async function apiGetAllData() {
   try {
     if (apiUsesBackend()) {
       const result = await callBackend("getAllData");
+      if (!["customers", "services", "invoices"].every(key => Array.isArray(result.data?.[key]))) {
+        throw new Error("Unexpected response while loading app data. Please reload and try again");
+      }
       return ok({
         customers: Array.isArray(result.data?.customers) ? result.data.customers : [],
         services: Array.isArray(result.data?.services) ? result.data.services : [],
@@ -260,7 +271,7 @@ function readQuotesStore() {
 async function apiGetQuotes() {
   try {
     const result = apiUsesBackend() ? await callBackend("getQuotes") : ok(readQuotesStore());
-    if (!Array.isArray(result.data)) throw new Error("Quote backend needs to be updated");
+    if (!Array.isArray(result.data)) throw new Error("Unexpected response while loading quotes. Please retry");
     return ok(result.data.map(normalizeQuote));
   } catch (error) { return fail(error); }
 }
